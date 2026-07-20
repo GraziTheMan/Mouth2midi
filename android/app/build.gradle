@@ -18,6 +18,9 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags '-std=c++17'
+                // Oboe's prefab package is built against the shared STL, so the
+                // app must use c++_shared too (the NDK default is c++_static).
+                arguments "-DANDROID_STL=c++_shared"
             }
         }
         aaptOptions {
