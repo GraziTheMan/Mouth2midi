@@ -33,6 +33,10 @@ export interface EngineConfig {
    * Higher = fewer octave errors / spurious notes, but drops quiet notes.
    */
   minConfidence: number;
+  /** Lowest MIDI note that may trigger; pitches below are ignored. */
+  minNote: number;
+  /** Highest MIDI note that may trigger; pitches above are ignored. */
+  maxNote: number;
 }
 
 export interface NoteEvent {

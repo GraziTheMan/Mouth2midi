@@ -19,6 +19,11 @@ const el = {
   gateVal: $('gateVal'),
   conf: $<HTMLInputElement>('conf'),
   confVal: $('confVal'),
+  rangeLo: $<HTMLInputElement>('rangeLo'),
+  rangeHi: $<HTMLInputElement>('rangeHi'),
+  rangeLoVal: $('rangeLoVal'),
+  rangeHiVal: $('rangeHiVal'),
+  quant: $<HTMLSelectElement>('quant'),
   bpm: $<HTMLInputElement>('bpm'),
   bpmVal: $('bpmVal'),
   playBtn: $<HTMLButtonElement>('playBtn'),
@@ -39,6 +44,7 @@ const roll = createRoll(el.roll, {
   currentScale: () => el.scale.value as Scale,
   currentRoot: () => Number(el.root.value),
   isRecording: () => recording,
+  range: () => [Number(el.rangeLo.value), Number(el.rangeHi.value)],
 });
 
 function midiToName(midiFloat: number): string {
@@ -55,6 +61,8 @@ function pushConfig() {
     channel: 0,
     gateThreshold: Number(el.gate.value),
     minConfidence: Number(el.conf.value),
+    minNote: Number(el.rangeLo.value),
+    maxNote: Number(el.rangeHi.value),
   });
 }
 
@@ -145,10 +153,47 @@ function stopRecording() {
 
 el.saveBtn.addEventListener('click', async () => {
   if (recorded.length === 0) return;
-  const bytes = renderSmf(recorded, bpm);
+  const div = Number(el.quant.value); // 0 = off, else 1/div note
+  const notes = div > 0 ? quantizeToGrid(recorded, bpm, div) : recorded;
+  const bytes = renderSmf(notes, bpm);
   const filename = `mouth2midi-${Date.now()}.mid`;
   await exportMidi(filename, bytes);
 });
+
+/**
+ * Snap recorded note starts/ends to a rhythmic grid so the export lines up in
+ * the DAW. grid = a 1/`div` note at the given tempo. Notes are kept at least
+ * one grid cell long.
+ */
+function quantizeToGrid(events: RecordedNote[], tempo: number, div: number): RecordedNote[] {
+  const gridMs = (4 * (60000 / tempo)) / div;
+  const snap = (t: number) => Math.round(t / gridMs) * gridMs;
+
+  // Pair on/off (monophonic-friendly FIFO per note).
+  const open = new Map<number, { start: number; vel: number }[]>();
+  const paired: { note: number; vel: number; start: number; end: number }[] = [];
+  for (const e of events) {
+    if (e.on) {
+      const q = open.get(e.note) ?? [];
+      q.push({ start: e.timeMs, vel: e.velocity });
+      open.set(e.note, q);
+    } else {
+      const q = open.get(e.note);
+      const started = q?.shift();
+      if (started) paired.push({ note: e.note, vel: started.vel, start: started.start, end: e.timeMs });
+    }
+  }
+
+  const out: RecordedNote[] = [];
+  for (const n of paired) {
+    let s = snap(n.start);
+    let en = snap(n.end);
+    if (en <= s) en = s + gridMs;
+    out.push({ timeMs: s, note: n.note, velocity: n.vel, on: true });
+    out.push({ timeMs: en, note: n.note, velocity: 0, on: false });
+  }
+  return out;
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -215,3 +260,26 @@ el.bpm.addEventListener('input', () => {
   bpm = Number(el.bpm.value);
   el.bpmVal.textContent = String(bpm);
 });
+
+function syncRangeLabels() {
+  // Keep low strictly below high so the band is always valid.
+  let lo = Number(el.rangeLo.value);
+  let hi = Number(el.rangeHi.value);
+  if (lo >= hi) {
+    if (document.activeElement === el.rangeLo) hi = lo + 1;
+    else lo = hi - 1;
+    el.rangeLo.value = String(lo);
+    el.rangeHi.value = String(hi);
+  }
+  el.rangeLoVal.textContent = midiToName(lo);
+  el.rangeHiVal.textContent = midiToName(hi);
+}
+el.rangeLo.addEventListener('input', () => {
+  syncRangeLabels();
+  pushConfig();
+});
+el.rangeHi.addEventListener('input', () => {
+  syncRangeLabels();
+  pushConfig();
+});
+syncRangeLabels();

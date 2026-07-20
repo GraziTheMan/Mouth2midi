@@ -33,9 +33,11 @@ bool AudioEngine::start() {
         ->setChannelCount(oboe::ChannelCount::Mono)
         ->setSampleRate(48000)
         ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
-        // VoiceRecognition preset disables AGC/AEC processing that would smear
-        // the signal and hurt pitch tracking.
-        ->setInputPreset(oboe::InputPreset::VoiceRecognition)
+        // Unprocessed preset asks the device for the rawest possible signal —
+        // no AGC/AEC/noise-suppression/high-pass. Those all smear pitch and
+        // (via the low-cut) swallow low notes, so we want them off. Devices
+        // that can't honor it fall back to their default automatically.
+        ->setInputPreset(oboe::InputPreset::Unprocessed)
         ->setDataCallback(this);
 
     oboe::Result result = builder.openStream(stream_);

@@ -49,8 +49,9 @@ int NoteTracker::quantize(float midiFloat) const {
 }
 
 static int rmsToVelocity(float rms) {
-    // Perceptual-ish curve: sqrt maps quiet input to usable velocities.
-    float v = std::sqrt(rms) * 300.0f;
+    // Map singing-level RMS (~0.02..0.4) to a musical velocity spread instead
+    // of pinning everything at 127. sqrt gives a perceptual-ish curve.
+    float v = std::sqrt(rms) * 170.0f + 12.0f;
     if (v < 1.0f) v = 1.0f;
     if (v > 127.0f) v = 127.0f;
     return static_cast<int>(v);
@@ -61,41 +62,70 @@ void NoteTracker::reset() {
     candidateNote_ = -1;
     candidateFrames_ = 0;
     silentFrames_ = 0;
+    smoothed_ = 0.0f;
+    haveSmoothed_ = false;
+}
+
+// Release the sounding note (if any) after enough unvoiced/out-of-range frames.
+static NoteAction releaseAfterHold(int& active, int& silent, int offHold) {
+    NoteAction action;
+    if (active >= 0 && ++silent >= offHold) {
+        action.kind = NoteAction::NoteOff;
+        action.note = active;
+        active = -1;
+        silent = 0;
+    }
+    return action;
 }
 
 NoteAction NoteTracker::update(float frequency, float confidence, float rms) {
-    NoteAction action;
-
     const bool voiced =
         frequency > 0.0f && confidence >= cfg_.minConfidence && rms >= cfg_.gateThreshold;
 
     if (!voiced) {
         candidateNote_ = -1;
         candidateFrames_ = 0;
-        if (activeNote_ >= 0) {
-            if (++silentFrames_ >= cfg_.offHoldFrames) {
-                action.kind = NoteAction::NoteOff;
-                action.note = activeNote_;
-                activeNote_ = -1;
-                silentFrames_ = 0;
-            }
-        }
-        return action;
+        haveSmoothed_ = false;  // don't smooth across a gap
+        return releaseAfterHold(activeNote_, silentFrames_, cfg_.offHoldFrames);
+    }
+
+    const float midiFloat = 69.0f + 12.0f * std::log2(frequency / 440.0f);
+
+    // Smooth the pitch (EMA) before quantizing to tame vibrato/jitter.
+    if (!haveSmoothed_) {
+        smoothed_ = midiFloat;
+        haveSmoothed_ = true;
+    } else {
+        smoothed_ += kSmoothAlpha * (midiFloat - smoothed_);
+    }
+
+    // Pitch-range gate: outside the band, behave as if unvoiced for triggering.
+    if (smoothed_ < cfg_.minNote - 0.5f || smoothed_ > cfg_.maxNote + 0.5f) {
+        candidateNote_ = -1;
+        candidateFrames_ = 0;
+        return releaseAfterHold(activeNote_, silentFrames_, cfg_.offHoldFrames);
     }
 
     silentFrames_ = 0;
-    const float midiFloat = 69.0f + 12.0f * std::log2(frequency / 440.0f);
-    const int target = quantize(midiFloat);
+    const int target = quantize(smoothed_);
 
+    // Already sounding this note → sustain, nothing to emit.
     if (target == activeNote_) {
-        // Sustaining the same note — nothing to emit.
         candidateNote_ = -1;
         candidateFrames_ = 0;
-        return action;
+        return NoteAction{};
     }
 
-    // A different note than what's sounding: require it to persist (debounce)
-    // before committing, to reject vibrato/octave-flicker.
+    // Only a *settled* pitch (parked near a scale note) can start a new note.
+    // While sliding, the smoothed pitch sits between notes, so this is false and
+    // the current note keeps sounding (legato) instead of a staircase forming.
+    const bool settled = std::fabs(smoothed_ - target) <= kSettleTol;
+    if (!settled) {
+        candidateNote_ = -1;
+        candidateFrames_ = 0;
+        return NoteAction{};
+    }
+
     if (target == candidateNote_) {
         ++candidateFrames_;
     } else {
@@ -103,8 +133,9 @@ NoteAction NoteTracker::update(float frequency, float confidence, float rms) {
         candidateFrames_ = 1;
     }
 
+    NoteAction action;
     if (candidateFrames_ >= cfg_.onHoldFrames) {
-        const int velocity = rmsToVelocity(rms);
+        action.velocity = rmsToVelocity(rms);
         if (activeNote_ >= 0) {
             action.kind = NoteAction::Retrigger;
             action.offNote = activeNote_;
@@ -112,7 +143,6 @@ NoteAction NoteTracker::update(float frequency, float confidence, float rms) {
             action.kind = NoteAction::NoteOn;
         }
         action.note = target;
-        action.velocity = velocity;
         activeNote_ = target;
         candidateNote_ = -1;
         candidateFrames_ = 0;

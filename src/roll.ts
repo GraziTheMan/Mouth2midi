@@ -15,6 +15,7 @@ export interface RollOptions {
   currentScale: () => Scale;
   currentRoot: () => number; // MIDI note of scale root
   isRecording: () => boolean;
+  range: () => [number, number]; // [minNote, maxNote] gate bounds
 }
 
 export interface Roll {
@@ -44,6 +45,7 @@ const COL = {
   now: '#4a5169',
   rec: '#ff5c72',
   label: '#6b7180',
+  range: '#f0a63a',
 };
 
 interface PitchPoint {
@@ -200,6 +202,27 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
       prevT = p.t;
     }
     ctx.stroke();
+
+    // Pitch-range gate bounds: shade the excluded regions and dash the edges,
+    // so you can see when your pitch (green trace) falls outside the band.
+    const [rLo, rHi] = opts.range();
+    const yHi = yForMidi(rHi + 0.5);
+    const yLo = yForMidi(rLo - 0.5);
+    ctx.fillStyle = 'rgba(10,11,15,0.34)';
+    if (yHi > 0) ctx.fillRect(0, 0, cssW, Math.min(yHi, cssH));
+    if (yLo < cssH) ctx.fillRect(0, Math.max(0, yLo), cssW, cssH - Math.max(0, yLo));
+    ctx.strokeStyle = COL.range;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    for (const y of [yHi, yLo]) {
+      if (y >= 0 && y <= cssH) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(cssW, y);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
 
     // "Now" line + recording indicator.
     ctx.strokeStyle = opts.isRecording() ? COL.rec : COL.now;

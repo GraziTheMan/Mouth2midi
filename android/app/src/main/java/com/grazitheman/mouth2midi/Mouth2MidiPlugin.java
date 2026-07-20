@@ -85,8 +85,10 @@ public class Mouth2MidiPlugin extends Plugin {
         String scale = call.getString("scale", "chromatic");
         int root = call.getInt("scaleRoot", 60);
         float gate = call.getFloat("gateThreshold", 0.02f);
-        float minConf = call.getFloat("minConfidence", 0.85f);
-        engine.nativeConfigure(scale, root, gate, minConf);
+        float minConf = call.getFloat("minConfidence", 0.72f);
+        int minNote = call.getInt("minNote", 36);
+        int maxNote = call.getInt("maxNote", 96);
+        engine.nativeConfigure(scale, root, gate, minConf, minNote, maxNote);
         call.resolve();
     }
 

@@ -74,8 +74,28 @@
           </label>
 
           <label class="field">
-            <span>Confidence <em id="confVal">0.85</em></span>
-            <input id="conf" type="range" min="0.5" max="0.99" step="0.01" value="0.85" />
+            <span>Confidence <em id="confVal">0.72</em></span>
+            <input id="conf" type="range" min="0.5" max="0.99" step="0.01" value="0.72" />
+          </label>
+
+          <label class="field">
+            <span>Range low <em id="rangeLoVal">C3</em></span>
+            <input id="rangeLo" type="range" min="24" max="95" step="1" value="48" />
+          </label>
+
+          <label class="field">
+            <span>Range high <em id="rangeHiVal">C6</em></span>
+            <input id="rangeHi" type="range" min="25" max="96" step="1" value="84" />
+          </label>
+
+          <label class="field">
+            <span>Quantize</span>
+            <select id="quant">
+              <option value="0" selected>Off</option>
+              <option value="4">1/4</option>
+              <option value="8">1/8</option>
+              <option value="16">1/16</option>
+            </select>
           </label>
         </section>
 
