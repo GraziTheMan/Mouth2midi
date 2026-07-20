@@ -9,16 +9,27 @@ dist-ssr/
 # Vite
 .vite/
 
-# Capacitor generated native projects (regenerated with `npx cap add`)
-/android/
+# iOS project (not generated yet)
 /ios/
+
+# The android/ project IS committed so CI can build it, but its build
+# outputs and machine-local files are not.
+/android/app/build/
+/android/build/
+/android/.gradle/
+/android/.idea/
+/android/captures/
+/android/local.properties
+/android/app/src/main/cpp/.cxx/
+/android/**/.cxx/
+# Web assets + config copied in by `npx cap sync` (regenerated in CI)
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json
 
 # Native build artifacts
 *.o
-*.so
 .cxx/
-build/
-.gradle/
 
 # Editor / OS
 .vscode/*
