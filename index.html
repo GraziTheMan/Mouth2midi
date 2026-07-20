@@ -28,7 +28,16 @@
           <div class="level-label">input level</div>
         </section>
 
+        <section class="sheet">
+          <canvas id="roll"></canvas>
+        </section>
+
         <section class="controls">
+          <label class="field field-bpm">
+            <span>Tempo <em id="bpmVal">120</em> BPM</span>
+            <input id="bpm" type="range" min="40" max="240" step="1" value="120" />
+          </label>
+
           <label class="field">
             <span>Scale</span>
             <select id="scale">

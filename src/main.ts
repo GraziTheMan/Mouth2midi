@@ -1,5 +1,6 @@
 import { Mouth2Midi, type Scale } from './mouth2midi';
 import { renderSmf, type RecordedNote } from './smf';
+import { createRoll } from './roll';
 import './style.css';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -18,16 +19,27 @@ const el = {
   gateVal: $('gateVal'),
   conf: $<HTMLInputElement>('conf'),
   confVal: $('confVal'),
+  bpm: $<HTMLInputElement>('bpm'),
+  bpmVal: $('bpmVal'),
   playBtn: $<HTMLButtonElement>('playBtn'),
   recBtn: $<HTMLButtonElement>('recBtn'),
   saveBtn: $<HTMLButtonElement>('saveBtn'),
   status: $('status'),
+  roll: $<HTMLCanvasElement>('roll'),
 };
 
 let running = false;
 let recording = false;
 let recordStart = 0;
 let recorded: RecordedNote[] = [];
+let bpm = 120;
+
+// Live piano-roll sheet — created before the listeners that feed it.
+const roll = createRoll(el.roll, {
+  currentScale: () => el.scale.value as Scale,
+  currentRoot: () => Number(el.root.value),
+  isRecording: () => recording,
+});
 
 function midiToName(midiFloat: number): string {
   const rounded = Math.round(midiFloat);
@@ -65,10 +77,13 @@ void Mouth2Midi.addListener('pitch', (p) => {
   el.freq.textContent = `${p.frequency.toFixed(1)} Hz`;
   const cents = (p.midiFloat - Math.round(p.midiFloat)) * 100; // -50..+50
   el.centsNeedle.style.transform = `translateX(${cents * 1.6}px)`;
+
+  roll.addPitch(p.midiFloat, p.confidence);
 });
 
-// --- Note events → recorder --------------------------------------------------
+// --- Note events → recorder + live sheet -------------------------------------
 void Mouth2Midi.addListener('note', (n) => {
+  roll.addNote(n.type, n.note, n.velocity);
   if (!recording) return;
   recorded.push({
     timeMs: performance.now() - recordStart,
@@ -130,7 +145,7 @@ function stopRecording() {
 
 el.saveBtn.addEventListener('click', async () => {
   if (recorded.length === 0) return;
-  const bytes = renderSmf(recorded, 120);
+  const bytes = renderSmf(recorded, bpm);
   const filename = `mouth2midi-${Date.now()}.mid`;
   await exportMidi(filename, bytes);
 });
@@ -195,4 +210,8 @@ el.gate.addEventListener('input', () => {
 el.conf.addEventListener('input', () => {
   el.confVal.textContent = Number(el.conf.value).toFixed(2);
   pushConfig();
+});
+el.bpm.addEventListener('input', () => {
+  bpm = Number(el.bpm.value);
+  el.bpmVal.textContent = String(bpm);
 });
