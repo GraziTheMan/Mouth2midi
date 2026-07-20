@@ -11,6 +11,7 @@ const el = {
   noteName: $('noteName'),
   centsNeedle: $('centsNeedle'),
   freq: $('freq'),
+  level: $('levelFill'),
   scale: $<HTMLSelectElement>('scale'),
   root: $<HTMLSelectElement>('root'),
   gate: $<HTMLInputElement>('gate'),
@@ -47,6 +48,13 @@ function pushConfig() {
 
 // --- Live pitch → tuner UI ---------------------------------------------------
 void Mouth2Midi.addListener('pitch', (p) => {
+  // Input-level meter updates on every frame, voiced or not, so you can see
+  // the mic is delivering signal even before a pitch locks. sqrt curve makes
+  // quiet input visible; the marker at the gate threshold shows where notes
+  // start triggering.
+  const levelPct = Math.min(100, Math.sqrt(Math.max(0, p.rms)) * 200);
+  el.level.style.width = `${levelPct}%`;
+
   if (p.frequency <= 0) {
     el.noteName.textContent = '—';
     el.freq.textContent = '0 Hz';

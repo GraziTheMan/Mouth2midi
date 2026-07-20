@@ -99,19 +99,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* /*stream*/
                                                    int32_t numFrames) {
     const float* in = static_cast<const float*>(audioData);
 
-    // Slide incoming frames into the analysis window; run YIN every kHop
-    // samples so consecutive windows overlap (smoother pitch track).
+    // Accumulate samples into the analysis window. Once it fills, run YIN and
+    // slide the window left by one hop so successive analyses overlap
+    // (kWindow - kHop samples of history are retained). Analysis then runs
+    // once per kHop samples (~10.7ms at 48k) regardless of how the callback's
+    // frame count aligns with the hop — the previous `i % kHop` gate keyed off
+    // the per-callback index and almost never fired.
     for (int32_t i = 0; i < numFrames; ++i) {
-        if (filled_ < kWindow) {
-            ring_[filled_++] = in[i];
-        } else {
-            // Shift left by one hop when full, then append.
+        ring_[filled_++] = in[i];
+        if (filled_ == kWindow) {
+            analyzeWindow();
             std::move(ring_.begin() + kHop, ring_.end(), ring_.begin());
             filled_ = kWindow - kHop;
-            ring_[filled_++] = in[i];
-        }
-        if (filled_ == kWindow && (i % kHop) == 0) {
-            analyzeWindow();
         }
     }
     return oboe::DataCallbackResult::Continue;
