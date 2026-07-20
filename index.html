@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Mouth2MIDI</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <h1>Mouth<span class="accent">2</span>MIDI</h1>
+        <span id="latency" class="badge">—</span>
+      </header>
+
+      <main>
+        <section class="tuner">
+          <div id="noteName" class="note-name">—</div>
+          <div class="cents-track">
+            <div id="centsNeedle" class="cents-needle"></div>
+          </div>
+          <div id="freq" class="freq">0 Hz</div>
+        </section>
+
+        <section class="controls">
+          <label class="field">
+            <span>Scale</span>
+            <select id="scale">
+              <option value="chromatic">Chromatic</option>
+              <option value="major">Major</option>
+              <option value="minor" selected>Minor</option>
+              <option value="pentatonic">Pentatonic</option>
+              <option value="blues">Blues</option>
+              <option value="dorian">Dorian</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Root</span>
+            <select id="root">
+              <option value="60">C</option>
+              <option value="61">C#</option>
+              <option value="62">D</option>
+              <option value="63">D#</option>
+              <option value="64">E</option>
+              <option value="65">F</option>
+              <option value="66">F#</option>
+              <option value="67">G</option>
+              <option value="68">G#</option>
+              <option value="69" selected>A</option>
+              <option value="70">A#</option>
+              <option value="71">B</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Gate <em id="gateVal">0.02</em></span>
+            <input id="gate" type="range" min="0" max="0.2" step="0.005" value="0.02" />
+          </label>
+
+          <label class="field">
+            <span>Confidence <em id="confVal">0.85</em></span>
+            <input id="conf" type="range" min="0.5" max="0.99" step="0.01" value="0.85" />
+          </label>
+        </section>
+
+        <section class="transport">
+          <button id="playBtn" class="btn btn-primary">Start</button>
+          <button id="recBtn" class="btn" disabled>● Record</button>
+          <button id="saveBtn" class="btn" disabled>Save .mid</button>
+        </section>
+
+        <p id="status" class="status"></p>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

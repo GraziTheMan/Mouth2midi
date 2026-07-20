@@ -1,0 +1,169 @@
+import { Mouth2Midi, type Scale } from './mouth2midi';
+import { renderSmf, type RecordedNote } from './smf';
+import './style.css';
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const el = {
+  latency: $('latency'),
+  noteName: $('noteName'),
+  centsNeedle: $('centsNeedle'),
+  freq: $('freq'),
+  scale: $<HTMLSelectElement>('scale'),
+  root: $<HTMLSelectElement>('root'),
+  gate: $<HTMLInputElement>('gate'),
+  gateVal: $('gateVal'),
+  conf: $<HTMLInputElement>('conf'),
+  confVal: $('confVal'),
+  playBtn: $<HTMLButtonElement>('playBtn'),
+  recBtn: $<HTMLButtonElement>('recBtn'),
+  saveBtn: $<HTMLButtonElement>('saveBtn'),
+  status: $('status'),
+};
+
+let running = false;
+let recording = false;
+let recordStart = 0;
+let recorded: RecordedNote[] = [];
+
+function midiToName(midiFloat: number): string {
+  const rounded = Math.round(midiFloat);
+  const name = NOTE_NAMES[((rounded % 12) + 12) % 12];
+  const octave = Math.floor(rounded / 12) - 1;
+  return `${name}${octave}`;
+}
+
+function pushConfig() {
+  void Mouth2Midi.configure({
+    scale: el.scale.value as Scale,
+    scaleRoot: Number(el.root.value),
+    channel: 0,
+    gateThreshold: Number(el.gate.value),
+    minConfidence: Number(el.conf.value),
+  });
+}
+
+// --- Live pitch → tuner UI ---------------------------------------------------
+void Mouth2Midi.addListener('pitch', (p) => {
+  if (p.frequency <= 0) {
+    el.noteName.textContent = '—';
+    el.freq.textContent = '0 Hz';
+    el.centsNeedle.style.transform = 'translateX(0)';
+    return;
+  }
+  el.noteName.textContent = midiToName(p.midiFloat);
+  el.freq.textContent = `${p.frequency.toFixed(1)} Hz`;
+  const cents = (p.midiFloat - Math.round(p.midiFloat)) * 100; // -50..+50
+  el.centsNeedle.style.transform = `translateX(${cents * 1.6}px)`;
+});
+
+// --- Note events → recorder --------------------------------------------------
+void Mouth2Midi.addListener('note', (n) => {
+  if (!recording) return;
+  recorded.push({
+    timeMs: performance.now() - recordStart,
+    note: n.note,
+    velocity: n.velocity,
+    on: n.type === 'noteOn',
+  });
+});
+
+// --- Transport ---------------------------------------------------------------
+el.playBtn.addEventListener('click', async () => {
+  if (!running) {
+    pushConfig();
+    await Mouth2Midi.start();
+    running = true;
+    el.playBtn.textContent = 'Stop';
+    el.playBtn.classList.add('active');
+    el.recBtn.disabled = false;
+
+    const status = await Mouth2Midi.getStatus();
+    const rtMs = status.framesPerBurst
+      ? ((status.framesPerBurst / status.sampleRate) * 1000).toFixed(1)
+      : '?';
+    el.latency.textContent = status.lowLatency
+      ? `⚡ ${rtMs}ms buf`
+      : `${rtMs}ms buf`;
+    el.status.textContent = status.lowLatency
+      ? 'Low-latency (exclusive/MMAP) stream granted.'
+      : 'Running (shared stream — expect higher latency).';
+  } else {
+    await Mouth2Midi.stop();
+    running = false;
+    if (recording) stopRecording();
+    el.playBtn.textContent = 'Start';
+    el.playBtn.classList.remove('active');
+    el.recBtn.disabled = true;
+  }
+});
+
+el.recBtn.addEventListener('click', () => {
+  if (!recording) {
+    recorded = [];
+    recordStart = performance.now();
+    recording = true;
+    el.recBtn.classList.add('active');
+    el.saveBtn.disabled = true;
+    el.status.textContent = 'Recording…';
+  } else {
+    stopRecording();
+  }
+});
+
+function stopRecording() {
+  recording = false;
+  el.recBtn.classList.remove('active');
+  el.saveBtn.disabled = recorded.length === 0;
+  el.status.textContent = `Captured ${recorded.length} MIDI events.`;
+}
+
+el.saveBtn.addEventListener('click', async () => {
+  if (recorded.length === 0) return;
+  const bytes = renderSmf(recorded, 120);
+  const filename = `mouth2midi-${Date.now()}.mid`;
+  await saveMidiFile(filename, bytes);
+});
+
+/**
+ * Save on-device via Capacitor Filesystem when native; fall back to a browser
+ * download in `npm run dev`.
+ */
+async function saveMidiFile(filename: string, bytes: Uint8Array) {
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    const base64 = btoa(binary);
+    const res = await Filesystem.writeFile({
+      path: filename,
+      data: base64,
+      directory: Directory.Documents,
+    });
+    el.status.textContent = `Saved: ${res.uri}`;
+  } catch {
+    // Browser dev fallback
+    const blob = new Blob([bytes as BlobPart], { type: 'audio/midi' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    el.status.textContent = `Downloaded ${filename}.`;
+  }
+}
+
+// --- Config UI wiring --------------------------------------------------------
+el.scale.addEventListener('change', pushConfig);
+el.root.addEventListener('change', pushConfig);
+el.gate.addEventListener('input', () => {
+  el.gateVal.textContent = Number(el.gate.value).toFixed(3);
+  pushConfig();
+});
+el.conf.addEventListener('input', () => {
+  el.confVal.textContent = Number(el.conf.value).toFixed(2);
+  pushConfig();
+});
