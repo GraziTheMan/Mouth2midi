@@ -29,6 +29,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // Persistent signing so every CI build shares one signature and installs
+        // as an update instead of failing with a signature mismatch. In CI these
+        // env vars come from GitHub Secrets (see .github/workflows/android.yml).
+        // When they are unset (local builds), this stays empty and Gradle falls
+        // back to the SDK's auto-generated debug keystore.
+        debug {
+            def ksPath = System.getenv("MOUTH2MIDI_KEYSTORE_FILE")
+            if (ksPath?.trim()) {
+                storeFile file(ksPath)
+                storePassword System.getenv("MOUTH2MIDI_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("MOUTH2MIDI_KEY_ALIAS")
+                keyPassword System.getenv("MOUTH2MIDI_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false

@@ -109,6 +109,32 @@ named **`mouth2midi-debug-apk`**. Open the run under the repo's **Actions**
 tab and download it from the artifacts section — no local Android toolchain
 needed. `workflow_dispatch` lets you trigger a build manually too.
 
+### Signing (so updates install cleanly)
+
+The APK is signed with a **persistent keystore** supplied via GitHub Secrets, so
+every build shares one signature and installs as an update rather than failing
+with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Configure these repo secrets
+(**Settings → Secrets and variables → Actions**):
+
+| Secret | Contents |
+| --- | --- |
+| `MOUTH2MIDI_KEYSTORE_BASE64` | base64 of the `.keystore` file |
+| `MOUTH2MIDI_KEYSTORE_PASSWORD` | keystore (store) password |
+| `MOUTH2MIDI_KEY_ALIAS` | key alias (e.g. `mouth2midi`) |
+| `MOUTH2MIDI_KEY_PASSWORD` | key password |
+
+Generate a keystore locally and base64 it:
+
+```bash
+keytool -genkeypair -v -keystore mouth2midi.keystore \
+  -alias mouth2midi -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 mouth2midi.keystore   # paste output into MOUTH2MIDI_KEYSTORE_BASE64
+```
+
+The keystore itself is git-ignored and must never be committed. If the secrets
+are absent, the build still succeeds but falls back to a per-run debug key
+(updates won't install over a previous build).
+
 ## Project layout
 
 ```

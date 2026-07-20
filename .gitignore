@@ -42,3 +42,7 @@ dist-ssr/
 .env
 .env.*
 !.env.example
+
+# Signing keystores — never commit these; they live in GitHub Secrets
+*.keystore
+*.jks
