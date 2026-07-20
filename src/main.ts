@@ -132,36 +132,57 @@ el.saveBtn.addEventListener('click', async () => {
   if (recorded.length === 0) return;
   const bytes = renderSmf(recorded, 120);
   const filename = `mouth2midi-${Date.now()}.mid`;
-  await saveMidiFile(filename, bytes);
+  await exportMidi(filename, bytes);
 });
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
 /**
- * Save on-device via Capacitor Filesystem when native; fall back to a browser
- * download in `npm run dev`.
+ * Export the recording. On device we write the .mid to app cache, then open the
+ * OS share sheet so the file can go straight into Cubasis, Files, Drive, etc.
+ * (App storage isn't reachable on-device otherwise.) In the browser we fall
+ * back to a plain download.
  */
-async function saveMidiFile(filename: string, bytes: Uint8Array) {
-  try {
-    const { Filesystem, Directory } = await import('@capacitor/filesystem');
-    let binary = '';
-    for (const b of bytes) binary += String.fromCharCode(b);
-    const base64 = btoa(binary);
-    const res = await Filesystem.writeFile({
-      path: filename,
-      data: base64,
-      directory: Directory.Documents,
-    });
-    el.status.textContent = `Saved: ${res.uri}`;
-  } catch {
-    // Browser dev fallback
-    const blob = new Blob([bytes as BlobPart], { type: 'audio/midi' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    el.status.textContent = `Downloaded ${filename}.`;
+async function exportMidi(filename: string, bytes: Uint8Array) {
+  const { Capacitor } = await import('@capacitor/core');
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+      const { uri } = await Filesystem.writeFile({
+        path: filename,
+        data: bytesToBase64(bytes),
+        directory: Directory.Cache,
+      });
+      await Share.share({
+        title: filename,
+        text: 'MIDI export from Mouth2MIDI',
+        files: [uri],
+        dialogTitle: 'Export MIDI file',
+      });
+      el.status.textContent = `Exported ${filename} — choose where to send it.`;
+    } catch (err) {
+      // User dismissing the share sheet also lands here; keep it quiet.
+      el.status.textContent = `Export canceled.`;
+      console.warn('[Mouth2Midi] export failed/canceled', err);
+    }
+    return;
   }
+
+  // Browser dev fallback: download.
+  const blob = new Blob([bytes as BlobPart], { type: 'audio/midi' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  el.status.textContent = `Downloaded ${filename}.`;
 }
 
 // --- Config UI wiring --------------------------------------------------------
