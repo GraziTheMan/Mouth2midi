@@ -14,8 +14,10 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math")
 # README). Prefab exposes the `oboe::oboe` target.
 find_package(oboe REQUIRED CONFIG)
 
-# TensorFlow Lite C++ API, exposed via the tensorflow-lite AAR's prefab package.
-find_package(tensorflowlite REQUIRED CONFIG)
+# NOTE: TensorFlow Lite is NOT linked here. The org.tensorflow:tensorflow-lite
+# AAR ships only the Java/JNI library, not a C++ prefab package, so SPICE
+# inference runs through the TFLite *Java* Interpreter on a worker thread and
+# feeds pitch back into this native engine via JNI (see docs/ML-SPICE.md).
 
 add_library(mouth2midi SHARED
     native-lib.cpp
@@ -29,6 +31,5 @@ find_library(log-lib log)
 
 target_link_libraries(mouth2midi
     oboe::oboe
-    tensorflowlite::tensorflowlite
     ${log-lib}
 )

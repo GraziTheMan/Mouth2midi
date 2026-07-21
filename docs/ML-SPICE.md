@@ -25,55 +25,54 @@ higher-accuracy alternative if SPICE isn't good enough.)
 So the pipeline is already detector-agnostic. The remaining work is wiring
 TFLite + the model.
 
-## Integration steps
+## Architecture decision: TFLite **Java** Interpreter, not C++
 
-1. **Add the TFLite dependency** to `android/app/build.gradle`:
-   ```gradle
-   dependencies {
-       implementation 'org.tensorflow:tensorflow-lite:2.16.1'
-       implementation 'org.tensorflow:tensorflow-lite-gpu:2.16.1' // NNAPI/GPU delegate
-   }
-   android { buildFeatures { prefab true } } // already enabled for Oboe
+We tried linking the TFLite C++ API via prefab and hit a wall:
+`find_package(tensorflowlite)` fails because the `org.tensorflow:tensorflow-lite`
+AAR ships **only the Java/JNI library — no C++ prefab package**. Rather than
+build TFLite from source, SPICE runs through the **Java `Interpreter`** on a
+worker thread. This also keeps neural-net inference **off the realtime audio
+thread** (a hard requirement — a per-hop NN on the audio callback would xrun).
+
+The `org.tensorflow:tensorflow-lite` dependency is kept in `build.gradle` for
+exactly this (the Java API); no CMake/native TFLite linkage.
+
+## Integration steps (Java path)
+
+1. **Native audio tap.** In `AudioEngine`, keep a small lock-free ring of the
+   most recent mono samples **downsampled to 16 kHz** (SPICE's rate), filled
+   from the audio callback (realtime-safe). Expose JNI
+   `nativePullSpiceWindow(float[] out) -> bool` that copies the latest window
+   for a Java thread to read (no allocation on the audio thread).
+
+2. **Java SPICE worker** (`SpiceEngine.java`): load `spice.tflite` into a TFLite
+   `Interpreter` (optionally with the NNAPI/GPU delegate for the Snapdragon
+   NPU). On a background thread, poll `nativePullSpiceWindow`, `run()` the
+   interpreter, read outputs, map to Hz:
    ```
-   Expose the TFLite C++ headers/libs to CMake (prefab package
-   `tensorflow-lite`), then in `CMakeLists.txt`:
-   ```cmake
-   find_package(tensorflowlite REQUIRED CONFIG)
-   target_link_libraries(mouth2midi tensorflowlite::tensorflowlite ...)
+   PT_OFFSET = 25.58, PT_SLOPE = 63.07
+   cqt_bin   = pitch * PT_SLOPE + PT_OFFSET
+   hz        = 10 * 2^(cqt_bin / 12)
+   confidence = 1 - uncertainty
    ```
-   NOTE: verify the exact prefab target name for the TFLite version chosen — this
-   is the step most likely to need on-device iteration.
+   Push the result down via JNI `nativePushExternalPitch(hz, confidence, rms)`.
 
-2. **Bundle the model.** Put `spice.tflite` in
-   `android/app/src/main/assets/`. Load its bytes in Java (AssetManager) and
-   pass the buffer down through JNI to `SpiceDetector`, or memory-map it.
-   Model: TF Hub `google/spice/2` (or the lite variant).
+3. **Native tracker on pushed pitch.** `nativePushExternalPitch` runs the
+   existing `NoteTracker` (cheap, not realtime-critical) and enqueues the
+   resulting note/pitch events on the same queue Java already polls. In SPICE
+   mode the audio callback skips YIN + tracking and only fills the 16k ring.
 
-3. **Fill in `SpiceDetector`** (`spice_detector.cpp`):
-   - Build `FlatBufferModel::BuildFromBuffer(modelBytes, modelSize)`.
-   - Build the interpreter; apply the GPU or NNAPI delegate for the Snapdragon
-     NPU; `AllocateTensors()`.
-   - Per window: **resample 48 kHz → 16 kHz** (SPICE's expected rate) into
-     `resampled_`, copy into the input tensor, `Invoke()`.
-   - Read outputs: SPICE returns a normalized `pitch` (0..1) and an
-     `uncertainty`. Map to Hz with SPICE's calibration:
-     ```
-     PT_OFFSET = 25.58, PT_SLOPE = 63.07
-     cqt_bin   = pitch * PT_SLOPE + PT_OFFSET
-     hz        = 10 * 2^(cqt_bin / 12)
-     confidence = 1 - uncertainty
-     ```
-   - Set `available_ = true` on success.
+4. **Model delivery.** No binary in the repo. `SpiceEngine` downloads
+   `spice.tflite` once to `filesDir` (Kaggle/TF Hub, URL overridable) and caches
+   it. Until present, SPICE reports unavailable and the app stays on YIN.
 
-4. **A/B toggle.** Add a `detector` field (`"yin"` | `"spice"`) to the config
-   path (JNI `nativeConfigure` → `AudioEngine`), and a UI selector. When
-   `"spice"` is chosen but `!detector->isAvailable()`, fall back to YIN and
-   surface that in `getStatus()` so the UI can show it.
+5. **A/B toggle.** A `detector` setting (`"yin"` | `"spice"`) via a new plugin
+   method + UI selector; `getStatus()` reports the active detector and whether
+   SPICE fell back.
 
-5. **Measure on-device.** The hard constraint is latency: inference must fit the
-   ~10.7 ms hop. Log inference time; if it's too slow at the full hop rate, run
-   SPICE at a lower rate (e.g. every other hop) and interpolate, or downsize the
-   window. This needs a real device — expect a build-measure-adjust loop.
+6. **Measure on-device.** SPICE need not run every hop — 30–50 Hz tracks a sung
+   melody fine and eases the latency/CPU budget. Log inference time and tune the
+   rate. Real-device, build-measure-adjust loop.
 
 ## Notes
 
