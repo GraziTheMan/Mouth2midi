@@ -21,11 +21,13 @@ const el = {
   confVal: $('confVal'),
   capture: $<HTMLInputElement>('capture'),
   captureVal: $('captureVal'),
+  centsBand: $('centsBand'),
   rangeLo: $<HTMLInputElement>('rangeLo'),
   rangeHi: $<HTMLInputElement>('rangeHi'),
   rangeLoVal: $('rangeLoVal'),
   rangeHiVal: $('rangeHiVal'),
   quant: $<HTMLSelectElement>('quant'),
+  metro: $<HTMLSelectElement>('metro'),
   bpm: $<HTMLInputElement>('bpm'),
   bpmVal: $('bpmVal'),
   playBtn: $<HTMLButtonElement>('playBtn'),
@@ -33,9 +35,16 @@ const el = {
   saveBtn: $<HTMLButtonElement>('saveBtn'),
   status: $('status'),
   roll: $<HTMLCanvasElement>('roll'),
+  beatRow: $('beatRow'),
   helpBtn: $<HTMLButtonElement>('helpBtn'),
   helpModal: $('helpModal'),
   helpClose: $<HTMLButtonElement>('helpClose'),
+  calibBtn: $<HTMLButtonElement>('calibBtn'),
+  calibModal: $('calibModal'),
+  calibText: $('calibText'),
+  calibRun: $<HTMLButtonElement>('calibRun'),
+  calibClose: $<HTMLButtonElement>('calibClose'),
+  calibCloseX: $<HTMLButtonElement>('calibCloseX'),
 };
 
 let running = false;
@@ -57,6 +66,22 @@ function midiToName(midiFloat: number): string {
   const name = NOTE_NAMES[((rounded % 12) + 12) % 12];
   const octave = Math.floor(rounded / 12) - 1;
   return `${name}${octave}`;
+}
+
+// The meter is ±50¢ across ~160px (1.6px/cent). Draw the capture band to that
+// scale so you can see how much slack you have around the target pitch.
+function updateCaptureBand() {
+  const cents = Number(el.capture.value);
+  el.centsBand.style.width = `${cents * 2 * 1.6}px`;
+}
+
+// Calibration taps the pitch stream when set (see runCalibration).
+let calibCollector: ((p: PitchSample) => void) | null = null;
+interface PitchSample {
+  frequency: number;
+  midiFloat: number;
+  confidence: number;
+  rms: number;
 }
 
 function pushConfig() {
@@ -93,6 +118,7 @@ void Mouth2Midi.addListener('pitch', (p) => {
   el.centsNeedle.style.transform = `translateX(${cents * 1.6}px)`;
 
   roll.addPitch(p.midiFloat, p.confidence);
+  calibCollector?.(p);
 });
 
 // --- Note events → recorder + live sheet -------------------------------------
@@ -131,6 +157,7 @@ el.playBtn.addEventListener('click', async () => {
     await Mouth2Midi.stop();
     running = false;
     if (recording) stopRecording();
+    stopMetro();
     el.playBtn.textContent = 'Start';
     el.playBtn.classList.remove('active');
     el.recBtn.disabled = true;
@@ -138,23 +165,89 @@ el.playBtn.addEventListener('click', async () => {
 });
 
 el.recBtn.addEventListener('click', () => {
-  if (!recording) {
-    recorded = [];
-    recordStart = performance.now();
-    recording = true;
-    el.recBtn.classList.add('active');
-    el.saveBtn.disabled = true;
-    el.status.textContent = 'Recording…';
-  } else {
+  if (recording) {
     stopRecording();
+    return;
   }
+  if (countingIn) return; // already counting in
+  if (el.metro.value === 'on') startCountInThenRecord();
+  else beginRecording();
 });
+
+function beginRecording() {
+  recorded = [];
+  recordStart = performance.now();
+  recording = true;
+  el.recBtn.classList.add('active');
+  el.saveBtn.disabled = true;
+  el.status.textContent = 'Recording…';
+}
 
 function stopRecording() {
   recording = false;
+  stopMetro();
   el.recBtn.classList.remove('active');
   el.saveBtn.disabled = recorded.length === 0;
   el.status.textContent = `Captured ${recorded.length} MIDI events.`;
+}
+
+// --- Metronome (mic-safe: visual + haptic, no audio) -------------------------
+let metroTimer: ReturnType<typeof setTimeout> | undefined;
+let countingIn = false;
+const COUNT_IN_BEATS = 4;
+const beatDots = Array.from(el.beatRow.querySelectorAll<HTMLElement>('.beat-dot'));
+
+const beatMs = () => 60000 / bpm;
+
+async function pulseHaptic(strong: boolean) {
+  try {
+    const { Haptics, ImpactStyle } = await import('@capacitor/haptics');
+    await Haptics.impact({ style: strong ? ImpactStyle.Medium : ImpactStyle.Light });
+  } catch {
+    /* no haptics on web / unsupported */
+  }
+}
+
+function pulseBeat(beat: number) {
+  const downbeat = beat % 4 === 0;
+  const dot = beatDots[beat % 4];
+  if (dot) {
+    dot.classList.toggle('downbeat', downbeat);
+    dot.classList.add('lit');
+    setTimeout(() => dot.classList.remove('lit'), 110);
+  }
+  void pulseHaptic(downbeat);
+}
+
+function stopMetro() {
+  if (metroTimer) clearTimeout(metroTimer);
+  metroTimer = undefined;
+  countingIn = false;
+  el.beatRow.setAttribute('hidden', '');
+}
+
+// One bar of count-in (visual + haptic), then start recording on the downbeat
+// and keep the beat going through the take. No audio, so nothing bleeds into
+// the mic.
+function startCountInThenRecord() {
+  countingIn = true;
+  el.beatRow.removeAttribute('hidden');
+  const start = performance.now();
+  let beat = 0;
+  const step = () => {
+    pulseBeat(beat);
+    if (beat < COUNT_IN_BEATS) {
+      el.status.textContent = `Count-in… ${COUNT_IN_BEATS - beat}`;
+    }
+    if (beat === COUNT_IN_BEATS) {
+      countingIn = false;
+      beginRecording();
+    }
+    beat++;
+    const next = start + beat * beatMs();
+    metroTimer = setTimeout(step, Math.max(0, next - performance.now()));
+  };
+  step();
 }
 
 el.saveBtn.addEventListener('click', async () => {
@@ -264,8 +357,10 @@ el.conf.addEventListener('input', () => {
 });
 el.capture.addEventListener('input', () => {
   el.captureVal.textContent = el.capture.value;
+  updateCaptureBand();
   pushConfig();
 });
+updateCaptureBand();
 
 // --- Help modal --------------------------------------------------------------
 el.helpBtn.addEventListener('click', () => el.helpModal.removeAttribute('hidden'));
@@ -300,3 +395,85 @@ el.rangeHi.addEventListener('input', () => {
   pushConfig();
 });
 syncRangeLabels();
+
+// --- Voice calibration -------------------------------------------------------
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function percentile(arr: number[], p: number): number {
+  const s = [...arr].sort((a, b) => a - b);
+  const i = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
+  return s[i];
+}
+
+function openCalib() {
+  el.calibText.innerHTML =
+    'This sets your range band and gate to your voice.<br />Make sure the mic is running (Start), then press Begin.';
+  el.calibRun.disabled = false;
+  el.calibModal.removeAttribute('hidden');
+}
+function closeCalib() {
+  calibCollector = null;
+  el.calibModal.setAttribute('hidden', '');
+}
+el.calibBtn.addEventListener('click', openCalib);
+el.calibClose.addEventListener('click', closeCalib);
+el.calibCloseX.addEventListener('click', closeCalib);
+
+el.calibRun.addEventListener('click', runCalibration);
+
+async function runCalibration() {
+  if (!running) {
+    el.calibText.textContent = 'Press Start first so the mic is live, then Begin.';
+    return;
+  }
+  el.calibRun.disabled = true;
+  const low: number[] = [];
+  const high: number[] = [];
+  const silence: number[] = [];
+
+  const phase = async (label: string, ms: number, cb: (p: PitchSample) => void) => {
+    calibCollector = cb;
+    for (let s = Math.ceil(ms / 1000); s > 0; s--) {
+      el.calibText.innerHTML = `${label}<br /><span style="font-size:44px">${s}</span>`;
+      await delay(1000);
+    }
+    calibCollector = null;
+  };
+
+  await phase('Hum your LOWEST comfortable note', 3000, (p) => {
+    if (p.frequency > 0 && p.confidence > 0.6) low.push(p.midiFloat);
+  });
+  await phase('Now your HIGHEST comfortable note', 3000, (p) => {
+    if (p.frequency > 0 && p.confidence > 0.6) high.push(p.midiFloat);
+  });
+  await phase('Stay silent…', 2000, (p) => {
+    silence.push(p.rms);
+  });
+
+  el.calibRun.disabled = false;
+
+  if (low.length < 5 || high.length < 5) {
+    el.calibText.textContent = "Didn't catch enough — hum steadily and try Begin again.";
+    return;
+  }
+
+  // Robust low/high from percentiles, padded a semitone, kept ordered.
+  let loNote = Math.max(24, Math.floor(percentile(low, 20)) - 1);
+  let hiNote = Math.min(96, Math.ceil(percentile(high, 80)) + 1);
+  if (hiNote <= loNote) hiNote = loNote + 1;
+
+  // Gate a touch above the measured noise floor.
+  const noise = silence.length ? percentile(silence, 90) : 0.01;
+  const gate = Math.min(0.15, Math.max(0.008, Math.round((noise * 1.7) / 0.005) * 0.005));
+
+  el.rangeLo.value = String(loNote);
+  el.rangeHi.value = String(hiNote);
+  el.gate.value = String(gate);
+  el.gateVal.textContent = gate.toFixed(3);
+  syncRangeLabels();
+  pushConfig();
+
+  el.calibText.innerHTML = `Done! Range <b>${midiToName(loNote)}–${midiToName(
+    hiNote,
+  )}</b>, gate <b>${gate.toFixed(3)}</b>.<br />Adjust the sliders any time.`;
+}

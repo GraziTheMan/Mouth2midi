@@ -328,3 +328,77 @@ select {
 .modal-body p {
   margin: 4px 0;
 }
+
+/* Capture band on the tuner meter -------------------------------------- */
+.cents-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  left: 50%;
+  width: 0;
+  transform: translateX(-50%);
+  background: rgba(33, 212, 168, 0.22);
+  border-left: 1px solid rgba(33, 212, 168, 0.55);
+  border-right: 1px solid rgba(33, 212, 168, 0.55);
+  border-radius: 4px;
+}
+
+/* Metronome beat indicator --------------------------------------------- */
+.beat-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 2px 0 8px;
+}
+.beat-row[hidden] {
+  display: none;
+}
+.beat-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  transition: transform 80ms ease, background 80ms ease;
+}
+.beat-dot.lit {
+  background: var(--accent-2);
+  transform: scale(1.5);
+}
+.beat-dot.downbeat.lit {
+  background: var(--accent);
+}
+
+/* Calibrate button + modal --------------------------------------------- */
+.calib-btn {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.calib-btn:active {
+  background: var(--panel-2);
+}
+
+.calib-body {
+  text-align: center;
+}
+.calib-text {
+  font-size: 18px;
+  line-height: 1.5;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.calib-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}

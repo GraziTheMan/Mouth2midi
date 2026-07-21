@@ -22,9 +22,17 @@
           <button id="saveBtn" class="btn" disabled>Export .mid</button>
         </section>
 
+        <div id="beatRow" class="beat-row" hidden>
+          <span class="beat-dot"></span>
+          <span class="beat-dot"></span>
+          <span class="beat-dot"></span>
+          <span class="beat-dot"></span>
+        </div>
+
         <section class="tuner">
           <div id="noteName" class="note-name">—</div>
           <div class="cents-track">
+            <div id="centsBand" class="cents-band"></div>
             <div id="centsNeedle" class="cents-needle"></div>
           </div>
           <div id="freq" class="freq">0 Hz</div>
@@ -108,7 +116,17 @@
               <option value="16">1/16</option>
             </select>
           </label>
+
+          <label class="field">
+            <span>Metronome</span>
+            <select id="metro">
+              <option value="off" selected>Off</option>
+              <option value="on">On (count-in)</option>
+            </select>
+          </label>
         </section>
+
+        <button id="calibBtn" class="calib-btn">🎤 Calibrate to my voice</button>
 
         <p id="status" class="status"></p>
 
@@ -137,7 +155,29 @@
           <p><b>Range low / high</b> — only pitches inside this band make notes; everything else is ignored. Set it to your comfortable singing range.</p>
 
           <h3>Timing</h3>
-          <p><b>Tempo</b> — the BPM written into the exported file; set it to your project's tempo. <b>Quantize</b> — snaps exported note timing to a grid (1/4, 1/8, 1/16) so it lands on the beat in your DAW.</p>
+          <p><b>Tempo</b> — the BPM written into the exported file; set it to your project's tempo. <b>Quantize</b> — snaps exported note timing to a grid (1/4, 1/8, 1/16) so it lands on the beat in your DAW. <b>Metronome</b> — On gives a visual + haptic beat and a one-bar count-in before recording (no audio, so it won't bleed into the mic).</p>
+
+          <h3>Calibrate to my voice</h3>
+          <p>Hum your lowest and highest comfortable notes and stay silent for a moment; the app sets your range band and noise gate to match your voice. Press <b>Start</b> first so the mic is live.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="calibModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>Voice calibration</h2>
+          <button id="calibCloseX" class="modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body calib-body">
+          <p id="calibText" class="calib-text">
+            This sets your range band and gate to your voice.<br />
+            Make sure the mic is running (Start), then hum when prompted.
+          </p>
+          <div class="calib-actions">
+            <button id="calibRun" class="btn btn-primary">Begin</button>
+            <button id="calibClose" class="btn">Close</button>
+          </div>
         </div>
       </div>
     </div>
