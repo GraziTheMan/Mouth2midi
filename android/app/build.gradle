@@ -78,9 +78,13 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     implementation "com.google.oboe:oboe:$oboeVersion"
-    // TensorFlow Lite — ships a prefab package so the native engine can link the
-    // C++ API for the learned pitch detector (SPICE). See docs/ML-SPICE.md.
+    // TensorFlow Lite (Java Interpreter) for the SPICE pitch model. See
+    // docs/ML-SPICE.md.
     implementation "org.tensorflow:tensorflow-lite:$tfliteVersion"
+    // SPICE uses a TF RFFT op (FlexRFFT) that isn't a builtin TFLite operator,
+    // so it needs the Select TF Ops (Flex delegate). Without this, inference
+    // fails at runtime with "Select TensorFlow op(s) ... not supported".
+    implementation "org.tensorflow:tensorflow-lite-select-tf-ops:$tfliteVersion"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

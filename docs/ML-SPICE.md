@@ -74,6 +74,20 @@ exactly this (the Java API); no CMake/native TFLite linkage.
    melody fine and eases the latency/CPU budget. Log inference time and tune the
    rate. Real-device, build-measure-adjust loop.
 
+## Verified model I/O (Kaggle google/spice LiteRT, v1, ~8.3 MB)
+
+Confirmed by loading the model:
+- **Input**: `input_audio_samples`, rank-1 float32, dynamically resizable to the
+  window length (16 kHz mono).
+- **Outputs**: `pitch` (index 0) and `uncertainty` (index 1), both rank-1
+  float32 `[num_frames]`; frame count grows with the input length. Take the
+  last frame.
+- **Flex op**: the model contains a TF `RFFT` (FlexRFFT) which is NOT a builtin
+  TFLite op. It requires **`org.tensorflow:tensorflow-lite-select-tf-ops`**;
+  without it, `Invoke()` throws "Select TensorFlow op(s) ... not supported".
+  The dependency is enough — the Java Interpreter auto-applies the Flex
+  delegate. (Adds notable APK size; acceptable for now.)
+
 ## Notes
 
 - Keep YIN as the default and always-available fallback. SPICE is opt-in until
