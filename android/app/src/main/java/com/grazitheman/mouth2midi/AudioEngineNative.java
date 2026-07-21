@@ -18,7 +18,7 @@ public final class AudioEngineNative {
     public native void nativeStop();
 
     public native void nativeConfigure(String scale, int root, float gate, float minConfidence,
-                                       int minNote, int maxNote);
+                                       int minNote, int maxNote, float settleTol);
 
     /** "sampleRate|framesPerBurst|lowLatency|running" */
     public native String nativeStatus();

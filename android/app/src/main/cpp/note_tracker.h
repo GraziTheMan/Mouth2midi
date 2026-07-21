@@ -25,6 +25,11 @@ struct TrackerConfig {
     // "sing within these bounds" auto-tune guide.
     int minNote = 36;             // C2
     int maxNote = 96;             // C7
+    // Capture band (semitones): how close the smoothed pitch must sit to a
+    // scale note to count as "settled" on it. Wide = forgiving (registers even
+    // when you're off), narrow = you must hit the note. This is the user-facing
+    // "Capture ±cents" control.
+    float settleTol = 0.4f;
 };
 
 struct NoteAction {
@@ -63,9 +68,6 @@ public:
 private:
     static const std::vector<int>& scaleSteps(Scale s);
 
-    // How close (in semitones) the smoothed pitch must sit to a scale note to
-    // count as "settled" on it. A slide is moving, so it rarely satisfies this.
-    static constexpr float kSettleTol = 0.4f;
     // EMA smoothing factor applied to the incoming pitch (0..1, higher = less
     // smoothing). Tames vibrato/jitter before quantization.
     static constexpr float kSmoothAlpha = 0.4f;

@@ -81,7 +81,7 @@ Java_com_grazitheman_mouth2midi_AudioEngineNative_nativeStop(JNIEnv*, jobject) {
 JNIEXPORT void JNICALL
 Java_com_grazitheman_mouth2midi_AudioEngineNative_nativeConfigure(
     JNIEnv* env, jobject, jstring scale, jint root, jfloat gate, jfloat minConf,
-    jint minNote, jint maxNote) {
+    jint minNote, jint maxNote, jfloat settleTol) {
     if (!g_engine) return;
     const char* scaleChars = env->GetStringUTFChars(scale, nullptr);
     TrackerConfig cfg;
@@ -91,6 +91,7 @@ Java_com_grazitheman_mouth2midi_AudioEngineNative_nativeConfigure(
     cfg.minConfidence = minConf;
     cfg.minNote = minNote;
     cfg.maxNote = maxNote;
+    cfg.settleTol = settleTol;
     env->ReleaseStringUTFChars(scale, scaleChars);
     g_engine->configure(cfg);
 }

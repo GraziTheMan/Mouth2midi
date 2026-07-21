@@ -16,6 +16,12 @@
       </header>
 
       <main>
+        <section class="transport">
+          <button id="playBtn" class="btn btn-primary">Start</button>
+          <button id="recBtn" class="btn" disabled>● Record</button>
+          <button id="saveBtn" class="btn" disabled>Export .mid</button>
+        </section>
+
         <section class="tuner">
           <div id="noteName" class="note-name">—</div>
           <div class="cents-track">
@@ -79,6 +85,11 @@
           </label>
 
           <label class="field">
+            <span>Capture ±<em id="captureVal">40</em>¢</span>
+            <input id="capture" type="range" min="10" max="50" step="5" value="40" />
+          </label>
+
+          <label class="field">
             <span>Range low <em id="rangeLoVal">C3</em></span>
             <input id="rangeLo" type="range" min="24" max="95" step="1" value="48" />
           </label>
@@ -99,14 +110,36 @@
           </label>
         </section>
 
-        <section class="transport">
-          <button id="playBtn" class="btn btn-primary">Start</button>
-          <button id="recBtn" class="btn" disabled>● Record</button>
-          <button id="saveBtn" class="btn" disabled>Export .mid</button>
-        </section>
-
         <p id="status" class="status"></p>
+
+        <button id="helpBtn" class="help-btn">? What do these controls do</button>
       </main>
+    </div>
+
+    <div id="helpModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>Mouth2MIDI — quick guide</h2>
+          <button id="helpClose" class="modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <h3>Transport</h3>
+          <p><b>Start</b> opens the mic and begins listening. <b>Record</b> captures the notes into a take. <b>Export .mid</b> opens the share sheet to send the MIDI file to Cubasis, Files, etc.</p>
+
+          <h3>The sheet</h3>
+          <p>The scrolling roll shows the <b style="color:#21d4a8">green pitch trace</b> (what it hears) and the <b style="color:#7c5cff">purple note blocks</b> (what gets recorded). The <b style="color:#f0a63a">amber dashed lines</b> are your range band; lanes in your scale are shaded.</p>
+
+          <h3>Pitch &amp; notes</h3>
+          <p><b>Scale / Root</b> — detected pitches snap to this scale. Chromatic = no snapping.</p>
+          <p><b>Gate</b> — input-loudness threshold. Below it, sound is treated as silence. Raise it to ignore breath/room noise; lower it if quiet notes are missed. Watch the input-level bar.</p>
+          <p><b>Confidence</b> — how sure the pitch detector must be before trusting a note. Higher = fewer wrong/octave notes but drops uncertain (often low or breathy) notes. Lower = more sensitive.</p>
+          <p><b>Capture</b> — how close to a note's exact pitch you must be for it to register (like a tuner's tolerance). Wide (±50¢) = forgiving; narrow (±10¢) = you must hit it. Also controls how "sticky" a held note is.</p>
+          <p><b>Range low / high</b> — only pitches inside this band make notes; everything else is ignored. Set it to your comfortable singing range.</p>
+
+          <h3>Timing</h3>
+          <p><b>Tempo</b> — the BPM written into the exported file; set it to your project's tempo. <b>Quantize</b> — snaps exported note timing to a grid (1/4, 1/8, 1/16) so it lands on the beat in your DAW.</p>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

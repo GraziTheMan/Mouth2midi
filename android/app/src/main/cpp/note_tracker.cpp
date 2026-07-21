@@ -1,5 +1,6 @@
 #include "note_tracker.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace m2m {
@@ -116,10 +117,24 @@ NoteAction NoteTracker::update(float frequency, float confidence, float rms) {
         return NoteAction{};
     }
 
+    // Stickiness: once a note is sounding, don't switch to a neighbour until the
+    // pitch has clearly *left* the active note. Combined with the settle band
+    // below this creates a dead zone around the boundary, so a held "ooh" that
+    // wobbles near a semitone-adjacent scale note (e.g. E/F) stops flip-flopping.
+    if (activeNote_ >= 0) {
+        const float leaveMargin =
+            std::min(0.9f, std::max(0.55f, cfg_.settleTol + 0.4f));
+        if (std::fabs(smoothed_ - activeNote_) < leaveMargin) {
+            candidateNote_ = -1;
+            candidateFrames_ = 0;
+            return NoteAction{};
+        }
+    }
+
     // Only a *settled* pitch (parked near a scale note) can start a new note.
     // While sliding, the smoothed pitch sits between notes, so this is false and
     // the current note keeps sounding (legato) instead of a staircase forming.
-    const bool settled = std::fabs(smoothed_ - target) <= kSettleTol;
+    const bool settled = std::fabs(smoothed_ - target) <= cfg_.settleTol;
     if (!settled) {
         candidateNote_ = -1;
         candidateFrames_ = 0;

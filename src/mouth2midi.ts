@@ -37,6 +37,11 @@ export interface EngineConfig {
   minNote: number;
   /** Highest MIDI note that may trigger; pitches above are ignored. */
   maxNote: number;
+  /**
+   * Capture band in semitones: how close the pitch must sit to a scale note to
+   * register (0.1 ≈ ±10¢ strict, 0.5 ≈ ±50¢ forgiving).
+   */
+  settleTol: number;
 }
 
 export interface NoteEvent {

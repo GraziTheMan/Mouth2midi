@@ -248,5 +248,83 @@ select {
   font-size: 13px;
   min-height: 18px;
   text-align: center;
-  margin: 4px 0 20px;
+  margin: 4px 0 12px;
+}
+
+.help-btn {
+  display: block;
+  width: 100%;
+  margin: 0 0 24px;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid var(--panel-2);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.help-btn:active {
+  background: var(--panel);
+}
+
+/* Help modal ----------------------------------------------------------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+}
+.modal[hidden] {
+  display: none;
+}
+
+.modal-card {
+  background: var(--panel);
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 10px;
+  border-bottom: 1px solid var(--panel-2);
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.modal-body {
+  overflow-y: auto;
+  padding: 8px 20px 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #c7ccd8;
+}
+.modal-body h3 {
+  color: var(--text);
+  font-size: 14px;
+  margin: 18px 0 4px;
+}
+.modal-body p {
+  margin: 4px 0;
 }

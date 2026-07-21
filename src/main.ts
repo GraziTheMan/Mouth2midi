@@ -19,6 +19,8 @@ const el = {
   gateVal: $('gateVal'),
   conf: $<HTMLInputElement>('conf'),
   confVal: $('confVal'),
+  capture: $<HTMLInputElement>('capture'),
+  captureVal: $('captureVal'),
   rangeLo: $<HTMLInputElement>('rangeLo'),
   rangeHi: $<HTMLInputElement>('rangeHi'),
   rangeLoVal: $('rangeLoVal'),
@@ -31,6 +33,9 @@ const el = {
   saveBtn: $<HTMLButtonElement>('saveBtn'),
   status: $('status'),
   roll: $<HTMLCanvasElement>('roll'),
+  helpBtn: $<HTMLButtonElement>('helpBtn'),
+  helpModal: $('helpModal'),
+  helpClose: $<HTMLButtonElement>('helpClose'),
 };
 
 let running = false;
@@ -63,6 +68,7 @@ function pushConfig() {
     minConfidence: Number(el.conf.value),
     minNote: Number(el.rangeLo.value),
     maxNote: Number(el.rangeHi.value),
+    settleTol: Number(el.capture.value) / 100, // cents → semitones
   });
 }
 
@@ -255,6 +261,17 @@ el.gate.addEventListener('input', () => {
 el.conf.addEventListener('input', () => {
   el.confVal.textContent = Number(el.conf.value).toFixed(2);
   pushConfig();
+});
+el.capture.addEventListener('input', () => {
+  el.captureVal.textContent = el.capture.value;
+  pushConfig();
+});
+
+// --- Help modal --------------------------------------------------------------
+el.helpBtn.addEventListener('click', () => el.helpModal.removeAttribute('hidden'));
+el.helpClose.addEventListener('click', () => el.helpModal.setAttribute('hidden', ''));
+el.helpModal.addEventListener('click', (e) => {
+  if (e.target === el.helpModal) el.helpModal.setAttribute('hidden', ''); // tap backdrop
 });
 el.bpm.addEventListener('input', () => {
   bpm = Number(el.bpm.value);

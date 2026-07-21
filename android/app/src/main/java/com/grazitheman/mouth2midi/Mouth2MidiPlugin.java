@@ -88,7 +88,8 @@ public class Mouth2MidiPlugin extends Plugin {
         float minConf = call.getFloat("minConfidence", 0.72f);
         int minNote = call.getInt("minNote", 36);
         int maxNote = call.getInt("maxNote", 96);
-        engine.nativeConfigure(scale, root, gate, minConf, minNote, maxNote);
+        float settleTol = call.getFloat("settleTol", 0.4f);
+        engine.nativeConfigure(scale, root, gate, minConf, minNote, maxNote, settleTol);
         call.resolve();
     }
 
