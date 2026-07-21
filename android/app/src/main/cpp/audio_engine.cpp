@@ -18,6 +18,7 @@ static int64_t nowMs() {
 
 AudioEngine::AudioEngine(EngineListener* listener) : listener_(listener) {
     ring_.resize(kWindow, 0.0f);
+    spiceRing_.resize(kSpiceRing, 0.0f);
 }
 
 AudioEngine::~AudioEngine() { stop(); }
@@ -55,6 +56,9 @@ bool AudioEngine::start() {
     // use it when isAvailable(); it falls back here otherwise.
     detector_ = std::make_unique<Yin>(sampleRate_, kWindow);
     filled_ = 0;
+    spiceWritePos_ = 0;
+    spiceDecimCount_ = 0;
+    spicePublished_.store(0);
 
     // A small multiple of the burst size keeps callbacks tight without xruns.
     stream_->setBufferSizeInFrames(framesPerBurst_ * 2);
@@ -86,11 +90,8 @@ void AudioEngine::stop() {
 
 void AudioEngine::configure(const TrackerConfig& cfg) { tracker_.configure(cfg); }
 
-void AudioEngine::analyzeWindow() {
-    const PitchResult pitch = detector_->process(ring_.data(), kWindow);
-    const int64_t t = nowMs();
+void AudioEngine::emit(const PitchResult& pitch, int64_t t) {
     if (listener_) listener_->onPitch(pitch, t);
-
     const NoteAction action =
         tracker_.update(pitch.frequency, pitch.confidence, pitch.rms);
     if (action.kind != NoteAction::None && listener_) {
@@ -98,10 +99,46 @@ void AudioEngine::analyzeWindow() {
     }
 }
 
+void AudioEngine::analyzeWindow() {
+    const PitchResult pitch = detector_->process(ring_.data(), kWindow);
+    emit(pitch, nowMs());
+}
+
+bool AudioEngine::pullSpiceWindow(float* out, size_t n) {
+    const size_t w = spicePublished_.load(std::memory_order_acquire);
+    if (w < n) return false;  // not enough captured yet
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = spiceRing_[(w - n + i) % kSpiceRing];
+    }
+    return true;
+}
+
+void AudioEngine::pushExternalPitch(float hz, float confidence, float rms) {
+    PitchResult p;
+    p.frequency = hz;
+    p.confidence = confidence;
+    p.rms = rms;
+    emit(p, nowMs());
+}
+
 oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* /*stream*/,
                                                    void* audioData,
                                                    int32_t numFrames) {
     const float* in = static_cast<const float*>(audioData);
+
+    // SPICE mode: skip YIN entirely; just downsample 48k → 16k into the ring for
+    // the Java worker to read. YIN mode: run the sliding-window analysis.
+    if (spiceMode_.load(std::memory_order_relaxed)) {
+        for (int32_t i = 0; i < numFrames; ++i) {
+            if (++spiceDecimCount_ >= kSpiceDecim) {
+                spiceDecimCount_ = 0;
+                spiceRing_[spiceWritePos_ % kSpiceRing] = in[i];
+                ++spiceWritePos_;
+                spicePublished_.store(spiceWritePos_, std::memory_order_release);
+            }
+        }
+        return oboe::DataCallbackResult::Continue;
+    }
 
     // Accumulate samples into the analysis window. Once it fills, run YIN and
     // slide the window left by one hop so successive analyses overlap

@@ -87,6 +87,16 @@ export interface Mouth2MidiPlugin {
     /** True if the device granted AAudio exclusive/MMAP (lowest latency). */
     lowLatency: boolean;
   }>;
+  /**
+   * Select the pitch detector. "spice" needs the model bundled at
+   * assets/spice.tflite; if absent it stays on "yin" and returns
+   * available:false so the UI can explain it.
+   */
+  setDetector(options: { detector: 'yin' | 'spice' }): Promise<{
+    detector: string;
+    available: boolean;
+    error?: string;
+  }>;
 
   addListener(
     eventName: 'note',

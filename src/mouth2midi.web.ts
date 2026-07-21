@@ -32,4 +32,8 @@ export class Mouth2MidiWeb extends WebPlugin implements Mouth2MidiPlugin {
       lowLatency: false,
     };
   }
+
+  async setDetector(_options: { detector: 'yin' | 'spice' }) {
+    return { detector: 'yin', available: false };
+  }
 }

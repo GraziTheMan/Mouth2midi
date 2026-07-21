@@ -44,6 +44,19 @@ public:
     int framesPerBurst() const { return framesPerBurst_; }
     bool isLowLatency() const { return lowLatency_.load(); }
 
+    // --- SPICE (Java-side learned detector) bridge ---------------------------
+    // In SPICE mode the audio callback only fills a 16 kHz ring; YIN + tracking
+    // are skipped. A Java worker pulls windows, runs the TFLite model, and feeds
+    // pitch back via pushExternalPitch (which then drives the NoteTracker).
+    void setSpiceMode(bool on) { spiceMode_.store(on); }
+    bool spiceMode() const { return spiceMode_.load(); }
+    // Copy the most recent n samples of 16 kHz audio into out. Returns false if
+    // fewer than n samples have been captured yet.
+    bool pullSpiceWindow(float* out, size_t n);
+    // Feed an externally computed pitch (from the Java SPICE worker) into the
+    // note tracker. Runs on the worker thread, not the audio thread.
+    void pushExternalPitch(float hz, float confidence, float rms);
+
     // oboe::AudioStreamDataCallback
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream,
                                           void* audioData,
@@ -51,6 +64,7 @@ public:
 
 private:
     void analyzeWindow();
+    void emit(const PitchResult& pitch, int64_t t);
 
     EngineListener* listener_;
     std::shared_ptr<oboe::AudioStream> stream_;
@@ -67,6 +81,15 @@ private:
 
     std::vector<float> ring_;   // accumulates samples up to kWindow
     size_t filled_ = 0;
+
+    // 16 kHz downsampled ring read by the Java SPICE worker.
+    static constexpr size_t kSpiceRing = 16000;  // 1 second
+    static constexpr int kSpiceDecim = 3;        // 48k -> 16k
+    std::vector<float> spiceRing_;
+    size_t spiceWritePos_ = 0;                   // audio-thread only
+    std::atomic<size_t> spicePublished_{0};      // visible to readers
+    int spiceDecimCount_ = 0;
+    std::atomic<bool> spiceMode_{false};
 
     std::atomic<bool> running_{false};
     std::atomic<bool> lowLatency_{false};

@@ -28,6 +28,7 @@ const el = {
   rangeHiVal: $('rangeHiVal'),
   quant: $<HTMLSelectElement>('quant'),
   metro: $<HTMLSelectElement>('metro'),
+  detector: $<HTMLSelectElement>('detector'),
   bpm: $<HTMLInputElement>('bpm'),
   bpmVal: $('bpmVal'),
   playBtn: $<HTMLButtonElement>('playBtn'),
@@ -362,6 +363,21 @@ el.capture.addEventListener('input', () => {
   pushConfig();
 });
 updateCaptureBand();
+
+// --- Pitch engine (YIN / SPICE) toggle --------------------------------------
+el.detector.addEventListener('change', async () => {
+  const want = el.detector.value as 'yin' | 'spice';
+  const res = await Mouth2Midi.setDetector({ detector: want });
+  if (want === 'spice' && !res.available) {
+    // Model not bundled (or failed to load) — revert the UI to YIN.
+    el.detector.value = 'yin';
+    el.status.textContent =
+      'SPICE model not found (add assets/spice.tflite). Staying on YIN.';
+  } else {
+    el.status.textContent =
+      res.detector === 'spice' ? 'Pitch engine: SPICE (AI).' : 'Pitch engine: YIN.';
+  }
+});
 
 // --- Help modal --------------------------------------------------------------
 el.helpBtn.addEventListener('click', () => el.helpModal.removeAttribute('hidden'));

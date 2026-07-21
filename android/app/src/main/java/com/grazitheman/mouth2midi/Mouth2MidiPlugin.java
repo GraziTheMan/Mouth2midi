@@ -12,6 +12,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 /**
  * Capacitor bridge. JS calls start/stop/configure/getStatus; native events
  * (note/pitch/percussion) are pushed back to JS via notifyListeners().
@@ -32,6 +37,8 @@ public class Mouth2MidiPlugin extends Plugin {
     private final AudioEngineNative engine = new AudioEngineNative();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean polling = false;
+    private SpiceEngine spice;
+    private static final String SPICE_ASSET = "spice.tflite";
 
     private static final long POLL_INTERVAL_MS = 8; // ~120 Hz
 
@@ -76,8 +83,79 @@ public class Mouth2MidiPlugin extends Plugin {
     public void stop(PluginCall call) {
         polling = false;
         handler.removeCallbacks(pollTask);
+        stopSpice();
         engine.nativeStop();
         call.resolve();
+    }
+
+    /**
+     * Select the pitch detector: "yin" (native, default) or "spice" (learned,
+     * Java TFLite worker). SPICE needs the model bundled at assets/spice.tflite;
+     * if it's missing or fails to load, we stay on YIN and report available:false
+     * so the UI can explain it. Resolves { detector, available }.
+     */
+    @PluginMethod
+    public void setDetector(PluginCall call) {
+        String which = call.getString("detector", "yin");
+        JSObject ret = new JSObject();
+        if ("spice".equals(which)) {
+            if (spice == null) {
+                ByteBuffer model = loadSpiceModel();
+                if (model == null) {
+                    engine.nativeSetDetector("yin");
+                    ret.put("detector", "yin");
+                    ret.put("available", false);
+                    call.resolve(ret);
+                    return;
+                }
+                try {
+                    spice = new SpiceEngine(engine, model);
+                    spice.start();
+                } catch (Throwable t) {
+                    spice = null;
+                    engine.nativeSetDetector("yin");
+                    ret.put("detector", "yin");
+                    ret.put("available", false);
+                    ret.put("error", String.valueOf(t.getMessage()));
+                    call.resolve(ret);
+                    return;
+                }
+            }
+            engine.nativeSetDetector("spice");
+            ret.put("detector", "spice");
+            ret.put("available", true);
+        } else {
+            stopSpice();
+            engine.nativeSetDetector("yin");
+            ret.put("detector", "yin");
+            ret.put("available", true);
+        }
+        call.resolve(ret);
+    }
+
+    private void stopSpice() {
+        engine.nativeSetDetector("yin");
+        if (spice != null) {
+            spice.stop();
+            spice = null;
+        }
+    }
+
+    /** Read assets/spice.tflite into a direct ByteBuffer, or null if absent. */
+    private ByteBuffer loadSpiceModel() {
+        try (InputStream is = getContext().getAssets().open(SPICE_ASSET)) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] chunk = new byte[16384];
+            int r;
+            while ((r = is.read(chunk)) > 0) bos.write(chunk, 0, r);
+            byte[] bytes = bos.toByteArray();
+            ByteBuffer buf = ByteBuffer.allocateDirect(bytes.length).order(ByteOrder.nativeOrder());
+            buf.put(bytes);
+            buf.rewind();
+            return buf;
+        } catch (Exception e) {
+            return null; // model not bundled yet
+        }
     }
 
     @PluginMethod

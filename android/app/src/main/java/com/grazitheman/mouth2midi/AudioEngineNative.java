@@ -25,4 +25,18 @@ public final class AudioEngineNative {
 
     /** Newline-separated event lines; see native-lib.cpp for the format. */
     public native String nativePollEvents();
+
+    // --- SPICE bridge --------------------------------------------------------
+
+    /** Select the active detector: "yin" (native) or "spice" (Java worker). */
+    public native void nativeSetDetector(String which);
+
+    /**
+     * Copy the most recent window of 16 kHz audio into {@code out}. Returns
+     * false if fewer than out.length samples have been captured yet.
+     */
+    public native boolean nativePullSpiceWindow(float[] out);
+
+    /** Feed a pitch computed by the Java SPICE worker into the note tracker. */
+    public native void nativePushExternalPitch(float hz, float confidence, float rms);
 }

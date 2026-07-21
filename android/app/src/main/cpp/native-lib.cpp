@@ -128,4 +128,37 @@ Java_com_grazitheman_mouth2midi_AudioEngineNative_nativePollEvents(JNIEnv* env,
     return env->NewStringUTF(out.c_str());
 }
 
+// --- SPICE bridge ------------------------------------------------------------
+
+JNIEXPORT void JNICALL
+Java_com_grazitheman_mouth2midi_AudioEngineNative_nativeSetDetector(
+    JNIEnv* env, jobject, jstring which) {
+    if (!g_engine) return;
+    const char* s = env->GetStringUTFChars(which, nullptr);
+    const bool spice = s && std::string(s) == "spice";
+    env->ReleaseStringUTFChars(which, s);
+    g_engine->setSpiceMode(spice);
+}
+
+// Copy the latest 16 kHz window into `out`; returns false if not enough audio.
+JNIEXPORT jboolean JNICALL
+Java_com_grazitheman_mouth2midi_AudioEngineNative_nativePullSpiceWindow(
+    JNIEnv* env, jobject, jfloatArray out) {
+    if (!g_engine) return JNI_FALSE;
+    const jsize n = env->GetArrayLength(out);
+    std::vector<float> tmp(static_cast<size_t>(n));
+    if (!g_engine->pullSpiceWindow(tmp.data(), static_cast<size_t>(n))) {
+        return JNI_FALSE;
+    }
+    env->SetFloatArrayRegion(out, 0, n, tmp.data());
+    return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_grazitheman_mouth2midi_AudioEngineNative_nativePushExternalPitch(
+    JNIEnv*, jobject, jfloat hz, jfloat confidence, jfloat rms) {
+    if (!g_engine) return;
+    g_engine->pushExternalPitch(hz, confidence, rms);
+}
+
 }  // extern "C"
