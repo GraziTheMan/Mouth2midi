@@ -16,6 +16,7 @@ export interface RollOptions {
   currentRoot: () => number; // MIDI note of scale root
   isRecording: () => boolean;
   range: () => [number, number]; // [minNote, maxNote] gate bounds
+  captureTol: () => number; // semitones; the ± band a pitch must land within
 }
 
 export interface Roll {
@@ -95,24 +96,45 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
     }
   }
 
+  function percentile(arr: number[], p: number): number {
+    const s = [...arr].sort((a, b) => a - b);
+    const i = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
+    return s[i];
+  }
+
+  // Robust vertical range: use confident, in-band pitches (via percentiles so a
+  // single noise spike can't blow out the zoom) plus committed notes, then clamp
+  // to the configured range band so the view never wanders to a "phantom octave".
   function targetRange(): [number, number] {
-    let lo = Infinity;
-    let hi = -Infinity;
+    const [rLo, rHi] = opts.range();
+    const vals: number[] = [];
     for (const p of pitches) {
-      if (p.midi < lo) lo = p.midi;
-      if (p.midi > hi) hi = p.midi;
+      if (p.conf < 0.5) continue; // ignore low-confidence noise
+      if (p.midi < rLo - 12 || p.midi > rHi + 12) continue; // ignore wild spikes
+      vals.push(p.midi);
     }
-    for (const s of segments) {
-      if (s.note < lo) lo = s.note;
-      if (s.note > hi) hi = s.note;
+    for (const s of segments) vals.push(s.note);
+
+    let lo: number;
+    let hi: number;
+    if (vals.length >= 4) {
+      lo = percentile(vals, 5);
+      hi = percentile(vals, 95);
+    } else if (vals.length > 0) {
+      lo = Math.min(...vals);
+      hi = Math.max(...vals);
+    } else {
+      lo = rLo;
+      hi = rHi;
     }
-    if (!isFinite(lo)) {
-      lo = 60;
-      hi = 60;
-    }
+    // Never show outside the range band (+ a little headroom).
+    lo = Math.max(lo, rLo - 2);
+    hi = Math.min(hi, rHi + 2);
+    if (hi < lo) [lo, hi] = [rLo, rHi];
+
     const mid = (lo + hi) / 2;
-    let span = Math.max(hi - lo + 6, 14); // pad + minimum span
-    span = Math.min(span, 48);
+    let span = Math.max(hi - lo + 4, 14); // pad + minimum span
+    span = Math.min(span, 40);
     return [mid - span / 2, mid + span / 2];
   }
 
@@ -137,6 +159,7 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
     const scale = opts.currentScale();
     const root = ((opts.currentRoot() % 12) + 12) % 12;
     const steps = new Set(SCALE_STEPS[scale].map((s) => (s + root) % 12));
+    const tol = opts.captureTol();
     const loN = Math.floor(viewLo);
     const hiN = Math.ceil(viewHi);
     for (let n = loN; n <= hiN; n++) {
@@ -145,6 +168,15 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
       const pc = ((n % 12) + 12) % 12;
       ctx.fillStyle = steps.has(pc) ? COL.laneInScale : COL.lane;
       ctx.fillRect(0, yTop, cssW, yBot - yTop);
+      // Capture zone: the ± band your pitch must land in for this scale note to
+      // register. Its thickness = the Capture setting, so you can see how much
+      // slack you have. If the green trace sits between zones, no note fires.
+      if (steps.has(pc)) {
+        const yz0 = yForMidi(n + tol);
+        const yz1 = yForMidi(n - tol);
+        ctx.fillStyle = 'rgba(33, 212, 168, 0.18)';
+        ctx.fillRect(0, yz0, cssW, yz1 - yz0);
+      }
       if (pc === 0) {
         ctx.strokeStyle = COL.octaveLine;
         ctx.lineWidth = 1;

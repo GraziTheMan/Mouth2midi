@@ -59,6 +59,7 @@ const roll = createRoll(el.roll, {
   currentRoot: () => Number(el.root.value),
   isRecording: () => recording,
   range: () => [Number(el.rangeLo.value), Number(el.rangeHi.value)],
+  captureTol: () => Number(el.capture.value) / 100,
 });
 
 function midiToName(midiFloat: number): string {
