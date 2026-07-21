@@ -66,7 +66,13 @@ Standard MIDI File writer — and saves via Capacitor Filesystem on device.
   allows, USB-gadget MIDI. Uses Android `MidiManager`.
 - **Phase 2 — Note-logic polish.** Better onset/offset, glide handling,
   octave-error suppression, velocity curves. This is where "feel" is won.
-- **Phase 3 — Beatbox mode.** Onset detection + a tiny TFLite classifier
+  *(Largely done: settle-based commit, stickiness, octave-error guard, dynamic
+  velocity, Capture control.)*
+- **Phase 3a — Learned pitch (SPICE via TFLite).** Swap/augment YIN with a
+  learned detector to kill octave errors and handle noise. The pitch pipeline is
+  already detector-agnostic (`PitchDetector` interface); see
+  [`docs/ML-SPICE.md`](docs/ML-SPICE.md).
+- **Phase 3b — Beatbox mode.** Onset detection + a tiny TFLite classifier
   (kick/snare/hat) mapped to MIDI drum notes. The plugin already reserves a
   `percussion` event.
 

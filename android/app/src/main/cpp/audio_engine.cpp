@@ -51,7 +51,9 @@ bool AudioEngine::start() {
     lowLatency_.store(stream_->getSharingMode() == oboe::SharingMode::Exclusive &&
                       stream_->getPerformanceMode() == oboe::PerformanceMode::LowLatency);
 
-    yin_ = std::make_unique<Yin>(sampleRate_, kWindow);
+    // Default to YIN. To A/B a learned detector, construct a SpiceDetector and
+    // use it when isAvailable(); it falls back here otherwise.
+    detector_ = std::make_unique<Yin>(sampleRate_, kWindow);
     filled_ = 0;
 
     // A small multiple of the burst size keeps callbacks tight without xruns.
@@ -85,7 +87,7 @@ void AudioEngine::stop() {
 void AudioEngine::configure(const TrackerConfig& cfg) { tracker_.configure(cfg); }
 
 void AudioEngine::analyzeWindow() {
-    const PitchResult pitch = yin_->process(ring_.data(), kWindow);
+    const PitchResult pitch = detector_->process(ring_.data(), kWindow);
     const int64_t t = nowMs();
     if (listener_) listener_->onPitch(pitch, t);
 

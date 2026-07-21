@@ -90,13 +90,30 @@ NoteAction NoteTracker::update(float frequency, float confidence, float rms) {
         return releaseAfterHold(activeNote_, silentFrames_, cfg_.offHoldFrames);
     }
 
-    const float midiFloat = 69.0f + 12.0f * std::log2(frequency / 440.0f);
+    float midiFloat = 69.0f + 12.0f * std::log2(frequency / 440.0f);
 
     // Smooth the pitch (EMA) before quantizing to tame vibrato/jitter.
     if (!haveSmoothed_) {
         smoothed_ = midiFloat;
         haveSmoothed_ = true;
+        octaveJumpFrames_ = 0;
     } else {
+        // Octave-error guard: if the new pitch is ~12 semitones from where we
+        // were and folding it by an octave lands right back near the running
+        // pitch, treat it as an octave slip and fold it — unless the jump has
+        // persisted long enough to be a genuine leap.
+        const float diff = midiFloat - smoothed_;
+        if (std::fabs(std::fabs(diff) - 12.0f) < 1.5f) {
+            const float folded = midiFloat + (diff > 0.0f ? -12.0f : 12.0f);
+            if (std::fabs(folded - smoothed_) < 2.0f && octaveJumpFrames_ < kOctaveConfirm) {
+                midiFloat = folded;
+                ++octaveJumpFrames_;
+            } else {
+                octaveJumpFrames_ = 0; // real leap (sustained) or not an octave
+            }
+        } else {
+            octaveJumpFrames_ = 0;
+        }
         smoothed_ += kSmoothAlpha * (midiFloat - smoothed_);
     }
 

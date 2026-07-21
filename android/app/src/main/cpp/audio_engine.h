@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "note_tracker.h"
+#include "pitch_detector.h"
 #include "yin.h"
 
 namespace m2m {
@@ -53,7 +54,10 @@ private:
 
     EngineListener* listener_;
     std::shared_ptr<oboe::AudioStream> stream_;
-    std::unique_ptr<Yin> yin_;
+    // Active pitch estimator. Defaults to YIN; swappable for a learned detector
+    // (SpiceDetector) once its model is bundled — the rest of the pipeline is
+    // detector-agnostic.
+    std::unique_ptr<PitchDetector> detector_;
     NoteTracker tracker_;
 
     int sampleRate_ = 48000;

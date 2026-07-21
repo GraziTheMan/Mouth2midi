@@ -18,6 +18,7 @@ add_library(mouth2midi SHARED
     native-lib.cpp
     audio_engine.cpp
     yin.cpp
+    spice_detector.cpp
     note_tracker.cpp
 )
 

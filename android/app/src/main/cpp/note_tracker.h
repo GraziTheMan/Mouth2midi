@@ -71,6 +71,11 @@ private:
     // EMA smoothing factor applied to the incoming pitch (0..1, higher = less
     // smoothing). Tames vibrato/jitter before quantization.
     static constexpr float kSmoothAlpha = 0.4f;
+    // Octave-error guard: a sudden ~octave jump from the running pitch is
+    // usually a YIN octave slip (harmonic locked to half/double the period). We
+    // fold it back toward continuity for up to this many frames; if the "jump"
+    // persists longer it's accepted as a real octave leap.
+    static constexpr int kOctaveConfirm = 6;
 
     TrackerConfig cfg_{};
     int activeNote_ = -1;      // currently sounding note, -1 = none
@@ -79,6 +84,7 @@ private:
     int silentFrames_ = 0;
     float smoothed_ = 0.0f;    // EMA of incoming midiFloat
     bool haveSmoothed_ = false;
+    int octaveJumpFrames_ = 0; // consecutive frames an octave jump has held
 };
 
 }  // namespace m2m

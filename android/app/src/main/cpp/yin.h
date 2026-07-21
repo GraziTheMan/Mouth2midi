@@ -2,13 +2,9 @@
 #include <cstddef>
 #include <vector>
 
-namespace m2m {
+#include "pitch_detector.h"
 
-struct PitchResult {
-    float frequency = 0.0f;   // Hz, 0 if unvoiced / no confident pitch
-    float confidence = 0.0f;  // 0..1 (1 - aperiodicity at the chosen lag)
-    float rms = 0.0f;         // 0..1 RMS of the analysis window
-};
+namespace m2m {
 
 /**
  * YIN fundamental-frequency estimator for monophonic signals (de Cheveigné &
@@ -19,7 +15,7 @@ struct PitchResult {
  * Designed for realtime use: preallocates its scratch buffers so process()
  * does no heap allocation on the audio thread.
  */
-class Yin {
+class Yin : public PitchDetector {
 public:
     /**
      * @param sampleRate   e.g. 48000
@@ -34,7 +30,9 @@ public:
     Yin(int sampleRate, size_t bufferSize, float threshold = 0.12f);
 
     /** Analyze one window of mono float samples in [-1, 1]. */
-    PitchResult process(const float* samples, size_t n);
+    PitchResult process(const float* samples, size_t n) override;
+
+    const char* name() const override { return "yin"; }
 
     void setThreshold(float t) { threshold_ = t; }
 
