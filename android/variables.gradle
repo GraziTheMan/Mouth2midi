@@ -16,4 +16,5 @@ ext {
     // Native audio engine
     ndkVersion = '26.1.10909125'
     oboeVersion = '1.9.0'
+    tfliteVersion = '2.16.1'
 }

@@ -14,6 +14,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math")
 # README). Prefab exposes the `oboe::oboe` target.
 find_package(oboe REQUIRED CONFIG)
 
+# TensorFlow Lite C++ API, exposed via the tensorflow-lite AAR's prefab package.
+find_package(tensorflowlite REQUIRED CONFIG)
+
 add_library(mouth2midi SHARED
     native-lib.cpp
     audio_engine.cpp
@@ -26,5 +29,6 @@ find_library(log-lib log)
 
 target_link_libraries(mouth2midi
     oboe::oboe
+    tensorflowlite::tensorflowlite
     ${log-lib}
 )
