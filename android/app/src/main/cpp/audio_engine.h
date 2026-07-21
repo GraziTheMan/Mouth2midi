@@ -78,6 +78,11 @@ private:
     int framesPerBurst_ = 0;
     static constexpr size_t kWindow = 2048;  // YIN analysis window
     static constexpr size_t kHop = 512;      // ~10.7ms at 48k
+    // The Unprocessed input preset (chosen for clean pitch + low-note pickup)
+    // has no automatic gain, so raw levels are low. Apply a fixed makeup gain
+    // with tanh soft-clipping so the RMS gate works at a normal setting and
+    // SPICE (which never reports silence) can be gated by level.
+    static constexpr float kInputGain = 4.0f;
 
     std::vector<float> ring_;   // accumulates samples up to kWindow
     size_t filled_ = 0;

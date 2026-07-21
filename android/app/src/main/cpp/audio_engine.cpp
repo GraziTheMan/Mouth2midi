@@ -3,6 +3,7 @@
 #include <android/log.h>
 
 #include <chrono>
+#include <cmath>
 
 #define LOG_TAG "Mouth2MIDI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -132,7 +133,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* /*stream*/
         for (int32_t i = 0; i < numFrames; ++i) {
             if (++spiceDecimCount_ >= kSpiceDecim) {
                 spiceDecimCount_ = 0;
-                spiceRing_[spiceWritePos_ % kSpiceRing] = in[i];
+                spiceRing_[spiceWritePos_ % kSpiceRing] = std::tanh(in[i] * kInputGain);
                 ++spiceWritePos_;
                 spicePublished_.store(spiceWritePos_, std::memory_order_release);
             }
@@ -147,7 +148,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* /*stream*/
     // frame count aligns with the hop — the previous `i % kHop` gate keyed off
     // the per-callback index and almost never fired.
     for (int32_t i = 0; i < numFrames; ++i) {
-        ring_[filled_++] = in[i];
+        ring_[filled_++] = std::tanh(in[i] * kInputGain);
         if (filled_ == kWindow) {
             analyzeWindow();
             std::move(ring_.begin() + kHop, ring_.end(), ring_.begin());
