@@ -136,6 +136,7 @@
         </section>
 
         <button id="calibBtn" class="calib-btn">🎤 Calibrate to my voice</button>
+        <button id="drumCalibBtn" class="calib-btn">🥁 Calibrate my drums</button>
 
         <p id="status" class="status"></p>
 
@@ -168,6 +169,9 @@
 
           <h3>Calibrate to my voice</h3>
           <p>Hum your lowest and highest comfortable notes and stay silent for a moment; the app sets your range band and noise gate to match your voice. Press <b>Start</b> first so the mic is live.</p>
+
+          <h3>Beatbox &amp; Calibrate my drums</h3>
+          <p>Set <b>Engine → Beatbox</b> to turn kicks/snares/hi-hats into GM drum notes (channel 10). Because everyone's mouth sounds sit differently, <b>Calibrate my drums</b> learns <i>your</i> three sounds: tap out each one a few times when prompted and every later hit snaps to whichever of your sounds it's closest to. Runs entirely on-device; <b>Reset</b> returns to the built-in detector.</p>
         </div>
       </div>
     </div>
@@ -186,6 +190,27 @@
           <div class="calib-actions">
             <button id="calibRun" class="btn btn-primary">Begin</button>
             <button id="calibClose" class="btn">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="drumModal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>Drum calibration</h2>
+          <button id="drumCloseX" class="modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body calib-body">
+          <p id="drumText" class="calib-text">
+            Teach the app <b>your</b> kick, snare and hi-hat.<br />
+            Make sure the mic is running (Start). You'll tap out each
+            sound a few times when prompted, and it learns to tell them apart.
+          </p>
+          <div class="calib-actions">
+            <button id="drumRun" class="btn btn-primary">Begin</button>
+            <button id="drumReset" class="btn">Reset</button>
+            <button id="drumClose" class="btn">Close</button>
           </div>
         </div>
       </div>

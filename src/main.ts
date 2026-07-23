@@ -46,6 +46,13 @@ const el = {
   calibRun: $<HTMLButtonElement>('calibRun'),
   calibClose: $<HTMLButtonElement>('calibClose'),
   calibCloseX: $<HTMLButtonElement>('calibCloseX'),
+  drumCalibBtn: $<HTMLButtonElement>('drumCalibBtn'),
+  drumModal: $('drumModal'),
+  drumText: $('drumText'),
+  drumRun: $<HTMLButtonElement>('drumRun'),
+  drumReset: $<HTMLButtonElement>('drumReset'),
+  drumClose: $<HTMLButtonElement>('drumClose'),
+  drumCloseX: $<HTMLButtonElement>('drumCloseX'),
 };
 
 let running = false;
@@ -136,14 +143,21 @@ void Mouth2Midi.addListener('note', (n) => {
 });
 
 // --- Percussion (beatbox) events → GM drum notes on channel 10 ---------------
-const DRUM_NOTE: Record<string, number> = { kick: 36, snare: 38, hat: 42 };
-const DRUM_LABEL: Record<string, string> = { kick: 'KICK', snare: 'SNARE', hat: 'HAT' };
+const DRUM_NOTE: Record<DrumKind, number> = { kick: 36, snare: 38, hat: 42 };
+const DRUM_LABEL: Record<DrumKind, string> = { kick: 'KICK', snare: 'SNARE', hat: 'HAT' };
 void Mouth2Midi.addListener('percussion', (p) => {
-  const note = DRUM_NOTE[p.kind] ?? 38;
-  el.noteName.textContent = DRUM_LABEL[p.kind] ?? p.kind;
+  // Calibration (when active) taps the raw hit stream before anything else.
+  drumCollector?.(p);
+
+  // If the user has calibrated their own drums, classify by nearest centroid;
+  // otherwise fall back to the native heuristic label.
+  const kind: DrumKind = drumCentroids ? classifyDrum(p) : (p.kind as DrumKind);
+  const note = DRUM_NOTE[kind] ?? 38;
+  el.noteName.textContent = DRUM_LABEL[kind] ?? kind;
   el.freq.textContent = `vel ${p.velocity}`;
   // Surface the classification features so they can be screenshotted for tuning.
-  el.status.textContent = `${DRUM_LABEL[p.kind]}  low=${(p.lowRatio ?? 0).toFixed(2)}  high=${(p.highRatio ?? 0).toFixed(2)}  zcr=${(p.zcr ?? 0).toFixed(2)}`;
+  const tag = drumCentroids ? '✓' : '';
+  el.status.textContent = `${DRUM_LABEL[kind]} ${tag}  low=${(p.lowRatio ?? 0).toFixed(2)}  high=${(p.highRatio ?? 0).toFixed(2)}  zcr=${(p.zcr ?? 0).toFixed(2)}`;
   if (!recording) return;
   const t = performance.now() - recordStart;
   // One-shot: a short note on GM drum channel 10 (index 9).
@@ -521,4 +535,170 @@ async function runCalibration() {
   el.calibText.innerHTML = `Done! Range <b>${midiToName(loNote)}–${midiToName(
     hiNote,
   )}</b>, gate <b>${gate.toFixed(3)}</b>.<br />Adjust the sliders any time.`;
+}
+
+// --- Drum calibration (per-user, nearest-centroid) ---------------------------
+// The global heuristic thresholds are whack-a-mole: every voice's kick/snare/hat
+// sit in different feature ranges, so a fixed cutoff that suits one person mis-
+// labels the next. Instead we let each user tap out their own three sounds, learn
+// the centroid (mean feature fingerprint) of each, and then classify every live
+// hit by "which of MY three sounds is this closest to?". Pure on-device maths on
+// features that already ride along in the hit event — no data leaves the phone.
+
+type DrumKind = 'kick' | 'snare' | 'hat';
+type DrumFeat = [number, number, number]; // normalized [low, high, zcr]
+type DrumCentroids = Record<DrumKind, DrumFeat>;
+
+// Normalize the three features to comparable ~0..1 ranges so Euclidean distance
+// weights them evenly. Divisors come from observed on-device spreads: lowRatio
+// tops out near 1, highRatio near 3, zcr near 0.6.
+function normFeat(p: { lowRatio?: number; highRatio?: number; zcr?: number }): DrumFeat {
+  return [(p.lowRatio ?? 0) / 1.0, (p.highRatio ?? 0) / 3.0, (p.zcr ?? 0) / 0.6];
+}
+
+const DRUM_KEY = 'm2m.drumCentroids';
+
+function loadDrumCentroids(): DrumCentroids | null {
+  try {
+    const raw = localStorage.getItem(DRUM_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as DrumCentroids;
+    if (c?.kick && c?.snare && c?.hat) return c;
+  } catch {
+    /* corrupt / unavailable storage — fall back to heuristic */
+  }
+  return null;
+}
+
+let drumCentroids: DrumCentroids | null = loadDrumCentroids();
+// Set while a calibration phase is collecting hits (see runDrumCalibration).
+let drumCollector: ((p: { lowRatio?: number; highRatio?: number; zcr?: number }) => void) | null =
+  null;
+
+function classifyDrum(p: { lowRatio?: number; highRatio?: number; zcr?: number }): DrumKind {
+  if (!drumCentroids) return 'snare';
+  const f = normFeat(p);
+  let best: DrumKind = 'snare';
+  let bestD = Infinity;
+  (Object.keys(drumCentroids) as DrumKind[]).forEach((k) => {
+    const c = drumCentroids![k];
+    const d = (f[0] - c[0]) ** 2 + (f[1] - c[1]) ** 2 + (f[2] - c[2]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = k;
+    }
+  });
+  return best;
+}
+
+function mean(feats: DrumFeat[]): DrumFeat {
+  const s: DrumFeat = [0, 0, 0];
+  for (const f of feats) {
+    s[0] += f[0];
+    s[1] += f[1];
+    s[2] += f[2];
+  }
+  const n = feats.length || 1;
+  return [s[0] / n, s[1] / n, s[2] / n];
+}
+
+function refreshDrumButton() {
+  el.drumCalibBtn.textContent = drumCentroids
+    ? '🥁 Drums calibrated ✓ (redo)'
+    : '🥁 Calibrate my drums';
+}
+refreshDrumButton();
+
+function openDrum() {
+  el.drumText.innerHTML = drumCentroids
+    ? "You've already calibrated. Press Begin to redo, or Reset to go back to the built-in detector."
+    : "Teach the app <b>your</b> kick, snare and hi-hat.<br />Make sure the mic is running (Start), then press Begin.";
+  el.drumRun.disabled = false;
+  el.drumModal.removeAttribute('hidden');
+}
+function closeDrum() {
+  drumCollector = null;
+  el.drumModal.setAttribute('hidden', '');
+}
+el.drumCalibBtn.addEventListener('click', openDrum);
+el.drumClose.addEventListener('click', closeDrum);
+el.drumCloseX.addEventListener('click', closeDrum);
+el.drumModal.addEventListener('click', (e) => {
+  if (e.target === el.drumModal) closeDrum();
+});
+el.drumReset.addEventListener('click', () => {
+  drumCentroids = null;
+  try {
+    localStorage.removeItem(DRUM_KEY);
+  } catch {
+    /* ignore */
+  }
+  refreshDrumButton();
+  el.drumText.innerHTML = 'Reset — back to the built-in drum detector.';
+});
+el.drumRun.addEventListener('click', runDrumCalibration);
+
+async function runDrumCalibration() {
+  if (!running) {
+    el.drumText.textContent = 'Press Start first so the mic is live, then Begin.';
+    return;
+  }
+  // Calibration only makes sense with the beatbox engine feeding hits; switch to
+  // it (and the UI selector) if we're not already there.
+  if (el.detector.value !== 'beatbox') {
+    el.detector.value = 'beatbox';
+    await Mouth2Midi.setDetector({ detector: 'beatbox' });
+  }
+  el.drumRun.disabled = true;
+
+  // Collect every hit that arrives during a labelled window.
+  const collect = (label: string, ms: number): Promise<DrumFeat[]> =>
+    new Promise((resolve) => {
+      const feats: DrumFeat[] = [];
+      drumCollector = (p) => feats.push(normFeat(p));
+      let remaining = Math.ceil(ms / 1000);
+      const tick = () => {
+        el.drumText.innerHTML = `${label}<br /><span style="font-size:40px">${remaining}</span><br /><span style="opacity:.7">${feats.length} caught</span>`;
+        if (remaining <= 0) {
+          drumCollector = null;
+          resolve(feats);
+          return;
+        }
+        remaining--;
+        setTimeout(tick, 1000);
+      };
+      tick();
+    });
+
+  const kickF = await collect('Tap your KICK ~5 times (e.g. a "b" / "puh")', 5000);
+  const snareF = await collect('Now your SNARE ~5 times (e.g. "psh" / "kah")', 5000);
+  const hatF = await collect('Now your HI-HAT ~5 times (e.g. "ts" / "tss")', 5000);
+
+  el.drumRun.disabled = false;
+
+  if (kickF.length < 2 || snareF.length < 2 || hatF.length < 2) {
+    const short = [
+      kickF.length < 2 ? 'kick' : null,
+      snareF.length < 2 ? 'snare' : null,
+      hatF.length < 2 ? 'hat' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    el.drumText.innerHTML = `Didn't catch enough ${short}. Tap a bit louder/steadier and press Begin again.`;
+    return;
+  }
+
+  drumCentroids = {
+    kick: mean(kickF),
+    snare: mean(snareF),
+    hat: mean(hatF),
+  };
+  try {
+    localStorage.setItem(DRUM_KEY, JSON.stringify(drumCentroids));
+  } catch {
+    /* storage full/unavailable — stays in memory for this session */
+  }
+  refreshDrumButton();
+
+  el.drumText.innerHTML = `Done! Learned your kick (${kickF.length}), snare (${snareF.length}) and hat (${hatF.length}).<br />Every hit now snaps to your closest sound. Reset any time.`;
 }
