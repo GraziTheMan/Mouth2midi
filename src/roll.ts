@@ -17,11 +17,15 @@ export interface RollOptions {
   isRecording: () => boolean;
   range: () => [number, number]; // [minNote, maxNote] gate bounds
   captureTol: () => number; // semitones; the ± band a pitch must land within
+  isBeatbox: () => boolean; // beatbox mode → show the drum lanes, not the pitch roll
 }
+
+export type DrumKind = 'kick' | 'snare' | 'hat';
 
 export interface Roll {
   addPitch(midiFloat: number, confidence: number): void;
   addNote(type: 'noteOn' | 'noteOff', note: number, velocity: number): void;
+  addDrum(kind: DrumKind, velocity: number): void;
 }
 
 const SCALE_STEPS: Record<Scale, number[]> = {
@@ -60,6 +64,18 @@ interface Segment {
   end: number | null;
   vel: number;
 }
+interface DrumHit {
+  t: number;
+  kind: DrumKind;
+  vel: number;
+}
+
+// Drum lanes render top→bottom in this order, each with its own colour.
+const DRUM_LANES: { kind: DrumKind; label: string; color: string }[] = [
+  { kind: 'hat', label: 'HAT', color: '#21d4a8' },
+  { kind: 'snare', label: 'SNARE', color: '#7c5cff' },
+  { kind: 'kick', label: 'KICK', color: '#f0a63a' },
+];
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -67,6 +83,7 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
   const ctx = canvas.getContext('2d');
   const pitches: PitchPoint[] = [];
   const segments: Segment[] = [];
+  const drums: DrumHit[] = [];
 
   // Eased view range (MIDI) so the vertical zoom follows your range smoothly.
   let viewLo = 52;
@@ -90,6 +107,7 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
   function prune(now: number) {
     const cutoff = now - WINDOW_MS;
     while (pitches.length && pitches[0].t < cutoff) pitches.shift();
+    while (drums.length && drums[0].t < cutoff) drums.shift();
     for (let i = segments.length - 1; i >= 0; i--) {
       const s = segments[i];
       if ((s.end ?? now) < cutoff) segments.splice(i, 1);
@@ -142,11 +160,87 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
   const yForMidi = (midi: number) =>
     cssH * (1 - (midi - viewLo) / (viewHi - viewLo));
 
+  // Beatbox view: three horizontal lanes (hat/snare/kick) with hits scrolling
+  // right→left, exactly like the pitch roll, so you can see what registered and
+  // how hard. Velocity drives the bar height + brightness.
+  function renderDrums(now: number) {
+    if (!ctx) return;
+    ctx.fillStyle = COL.bg;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const laneH = cssH / DRUM_LANES.length;
+
+    // Lane backgrounds, labels, and dividers.
+    DRUM_LANES.forEach((lane, i) => {
+      const y0 = i * laneH;
+      ctx.fillStyle = i % 2 ? COL.lane : COL.laneInScale;
+      ctx.fillRect(0, y0, cssW, laneH);
+      ctx.strokeStyle = COL.octaveLine;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y0);
+      ctx.lineTo(cssW, y0);
+      ctx.stroke();
+      ctx.fillStyle = lane.color;
+      ctx.globalAlpha = 0.5;
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillText(lane.label, 6, y0 + 14);
+      ctx.globalAlpha = 1;
+    });
+
+    // Second-gridlines for timing reference.
+    ctx.strokeStyle = COL.lane;
+    ctx.lineWidth = 1;
+    for (let s = 0; s <= WINDOW_MS / 1000; s++) {
+      const x = xForTime(now, now - s * 1000);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, cssH);
+      ctx.stroke();
+    }
+
+    // Hits: a rounded bar centred in its lane, taller/brighter with velocity.
+    const laneIndex: Record<DrumKind, number> = { hat: 0, snare: 1, kick: 2 };
+    for (const h of drums) {
+      const i = laneIndex[h.kind];
+      const lane = DRUM_LANES[i];
+      const cx = xForTime(now, h.t);
+      const v = Math.min(1, h.vel / 110);
+      const barH = laneH * (0.3 + 0.6 * v);
+      const yMid = i * laneH + laneH / 2;
+      const w = 7;
+      ctx.fillStyle = lane.color;
+      ctx.globalAlpha = 0.4 + 0.6 * v;
+      roundRect(ctx, cx - w / 2, yMid - barH / 2, w, barH, 3);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // "Now" line + recording indicator (shared with the pitch view).
+    ctx.strokeStyle = opts.isRecording() ? COL.rec : COL.now;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cssW - 1, 0);
+    ctx.lineTo(cssW - 1, cssH);
+    ctx.stroke();
+    if (opts.isRecording()) {
+      ctx.fillStyle = COL.rec;
+      ctx.beginPath();
+      ctx.arc(cssW - 12, 12, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   function render() {
     requestAnimationFrame(render);
     if (!ctx) return;
     const now = performance.now();
     prune(now);
+
+    if (opts.isBeatbox()) {
+      renderDrums(now);
+      return;
+    }
 
     const [tLo, tHi] = targetRange();
     viewLo += (tLo - viewLo) * 0.08;
@@ -290,6 +384,9 @@ export function createRoll(canvas: HTMLCanvasElement, opts: RollOptions): Roll {
           }
         }
       }
+    },
+    addDrum(kind, velocity) {
+      drums.push({ t: performance.now(), kind, vel: velocity });
     },
   };
 }

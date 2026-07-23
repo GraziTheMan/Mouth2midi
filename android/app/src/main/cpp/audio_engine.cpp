@@ -58,6 +58,7 @@ bool AudioEngine::start() {
     // use it when isAvailable(); it falls back here otherwise.
     detector_ = std::make_unique<Yin>(sampleRate_, kWindow);
     beat_ = std::make_unique<BeatDetector>(sampleRate_);
+    beat_->setOnsetFloor(onsetFloor_);  // apply the last-configured gate
     beatScratch_.resize(8192);
     filled_ = 0;
     spiceWritePos_ = 0;
@@ -92,7 +93,14 @@ void AudioEngine::stop() {
     tracker_.reset();
 }
 
-void AudioEngine::configure(const TrackerConfig& cfg) { tracker_.configure(cfg); }
+void AudioEngine::configure(const TrackerConfig& cfg) {
+    tracker_.configure(cfg);
+    // In beatbox mode the Gate slider is otherwise unused, so it doubles as the
+    // onset floor: raise it to reject room/car noise until only intentional hits
+    // fire. Stored so it also applies when the detector is (re)created in start().
+    onsetFloor_ = cfg.gateThreshold;
+    if (beat_) beat_->setOnsetFloor(onsetFloor_);
+}
 
 void AudioEngine::emit(const PitchResult& pitch, int64_t t) {
     if (listener_) listener_->onPitch(pitch, t);

@@ -68,6 +68,7 @@ const roll = createRoll(el.roll, {
   isRecording: () => recording,
   range: () => [Number(el.rangeLo.value), Number(el.rangeHi.value)],
   captureTol: () => Number(el.capture.value) / 100,
+  isBeatbox: () => el.detector.value === 'beatbox',
 });
 
 function midiToName(midiFloat: number): string {
@@ -149,20 +150,28 @@ void Mouth2Midi.addListener('percussion', (p) => {
   // Calibration (when active) taps the raw hit stream before anything else.
   drumCollector?.(p);
 
-  // If the user has calibrated their own drums, classify by nearest centroid;
-  // otherwise fall back to the native heuristic label.
-  const kind: DrumKind = drumCentroids ? classifyDrum(p) : (p.kind as DrumKind);
+  // If the user has calibrated their own drums, classify by nearest centroid
+  // (which may reject the hit as noise); otherwise use the native heuristic.
+  const kind: DrumKind | null = drumCentroids ? classifyDrum(p) : (p.kind as DrumKind);
+  if (kind === null) {
+    // Too far from every calibrated sound — treat as noise, ignore it.
+    el.status.textContent = `(ignored — doesn't match your drums)`;
+    return;
+  }
   const note = DRUM_NOTE[kind] ?? 38;
   el.noteName.textContent = DRUM_LABEL[kind] ?? kind;
   el.freq.textContent = `vel ${p.velocity}`;
-  // Surface the classification features so they can be screenshotted for tuning.
+  // Surface the features so they can be screenshotted for tuning.
   const tag = drumCentroids ? '✓' : '';
-  el.status.textContent = `${DRUM_LABEL[kind]} ${tag}  low=${(p.lowRatio ?? 0).toFixed(2)}  high=${(p.highRatio ?? 0).toFixed(2)}  zcr=${(p.zcr ?? 0).toFixed(2)}`;
+  el.status.textContent = `${DRUM_LABEL[kind]} ${tag}  low=${(p.lowRatio ?? 0).toFixed(2)}  cent=${Math.round(p.centroid ?? 0)}Hz  decay=${(p.decay ?? 0).toFixed(2)}`;
+  roll.addDrum(kind, p.velocity);
   if (!recording) return;
   const t = performance.now() - recordStart;
-  // One-shot: a short note on GM drum channel 10 (index 9).
+  // One-shot on GM drum channel 10 (index 9). Length tracks decay so a ringing
+  // hit writes a slightly longer note than a snappy one (30..110ms).
+  const lenMs = 30 + Math.min(1, Math.max(0, p.decay ?? 0)) * 80;
   recorded.push({ timeMs: t, note, velocity: p.velocity, on: true, channel: 9 });
-  recorded.push({ timeMs: t + 40, note, velocity: 0, on: false, channel: 9 });
+  recorded.push({ timeMs: t + lenMs, note, velocity: 0, on: false, channel: 9 });
 });
 
 // --- Transport ---------------------------------------------------------------
@@ -546,14 +555,41 @@ async function runCalibration() {
 // features that already ride along in the hit event — no data leaves the phone.
 
 type DrumKind = 'kick' | 'snare' | 'hat';
-type DrumFeat = [number, number, number]; // normalized [low, high, zcr]
-type DrumCentroids = Record<DrumKind, DrumFeat>;
+type DrumFeat = number[]; // normalized feature vector (see FEAT_DIM)
+interface DrumCentroids {
+  v: number; // feature-set version; bump when FEAT changes to force recalibration
+  kick: DrumFeat;
+  snare: DrumFeat;
+  hat: DrumFeat;
+}
 
-// Normalize the three features to comparable ~0..1 ranges so Euclidean distance
-// weights them evenly. Divisors come from observed on-device spreads: lowRatio
-// tops out near 1, highRatio near 3, zcr near 0.6.
-function normFeat(p: { lowRatio?: number; highRatio?: number; zcr?: number }): DrumFeat {
-  return [(p.lowRatio ?? 0) / 1.0, (p.highRatio ?? 0) / 3.0, (p.zcr ?? 0) / 0.6];
+// Bump whenever the feature vector changes so stale calibrations are discarded
+// (old saves were 3-D [low, high, zcr]; v2 is 4-D and swaps highRatio for the
+// better-scaled spectral centroid, and adds the decay/envelope axis).
+const FEAT_VERSION = 2;
+const FEAT_DIM = 4;
+
+// Normalize each feature to a comparable ~0..1 range so Euclidean distance
+// weights them evenly. We deliberately drop highRatio (it's just sqrt-redundant
+// with the centroid) and keep four semi-independent axes:
+//   low   — bass energy   → kick
+//   zcr   — noisiness (count-based brightness)
+//   cent  — spectral centroid in Hz (energy-based brightness)
+//   decay — envelope tail  → separates hat (snappy) from snare (lingers)
+type PercFeatures = {
+  lowRatio?: number;
+  highRatio?: number;
+  zcr?: number;
+  centroid?: number;
+  decay?: number;
+};
+function normFeat(p: PercFeatures): DrumFeat {
+  return [
+    (p.lowRatio ?? 0) / 1.0,
+    (p.zcr ?? 0) / 0.6,
+    (p.centroid ?? 0) / 9000,
+    (p.decay ?? 0) / 1.2,
+  ];
 }
 
 const DRUM_KEY = 'm2m.drumCentroids';
@@ -563,7 +599,10 @@ function loadDrumCentroids(): DrumCentroids | null {
     const raw = localStorage.getItem(DRUM_KEY);
     if (!raw) return null;
     const c = JSON.parse(raw) as DrumCentroids;
-    if (c?.kick && c?.snare && c?.hat) return c;
+    // Reject saves from an older feature set (dimensions won't line up).
+    if (c?.v !== FEAT_VERSION) return null;
+    if (c.kick?.length === FEAT_DIM && c.snare?.length === FEAT_DIM && c.hat?.length === FEAT_DIM)
+      return c;
   } catch {
     /* corrupt / unavailable storage — fall back to heuristic */
   }
@@ -572,34 +611,48 @@ function loadDrumCentroids(): DrumCentroids | null {
 
 let drumCentroids: DrumCentroids | null = loadDrumCentroids();
 // Set while a calibration phase is collecting hits (see runDrumCalibration).
-let drumCollector: ((p: { lowRatio?: number; highRatio?: number; zcr?: number }) => void) | null =
-  null;
+let drumCollector: ((p: PercFeatures) => void) | null = null;
 
-function classifyDrum(p: { lowRatio?: number; highRatio?: number; zcr?: number }): DrumKind {
+function dist2(a: DrumFeat, b: DrumFeat): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
+  return s;
+}
+
+// Outlier-reject radius from the (otherwise-unused-in-beatbox) Confidence slider:
+// higher confidence = stricter = a hit must sit closer to one of your learned
+// sounds or it's dropped as noise. This is what stops random car/room sounds
+// from being forced into a kick/snare/hat.
+function rejectRadius(): number {
+  const conf = Number(el.conf.value); // 0.5..0.99
+  const t = Math.min(1, Math.max(0, (conf - 0.5) / (0.99 - 0.5)));
+  return 0.85 - t * (0.85 - 0.18); // loose 0.85 → strict 0.18 (Euclidean dist)
+}
+
+// Nearest calibrated centroid, or null if the hit is too far from all of them
+// (an outlier we should ignore rather than mislabel).
+function classifyDrum(p: PercFeatures): DrumKind | null {
   if (!drumCentroids) return 'snare';
   const f = normFeat(p);
   let best: DrumKind = 'snare';
   let bestD = Infinity;
-  (Object.keys(drumCentroids) as DrumKind[]).forEach((k) => {
-    const c = drumCentroids![k];
-    const d = (f[0] - c[0]) ** 2 + (f[1] - c[1]) ** 2 + (f[2] - c[2]) ** 2;
+  (['kick', 'snare', 'hat'] as DrumKind[]).forEach((k) => {
+    const d = dist2(f, drumCentroids![k]);
     if (d < bestD) {
       bestD = d;
       best = k;
     }
   });
+  const r = rejectRadius();
+  if (bestD > r * r) return null; // no calibrated sound is close enough
   return best;
 }
 
 function mean(feats: DrumFeat[]): DrumFeat {
-  const s: DrumFeat = [0, 0, 0];
-  for (const f of feats) {
-    s[0] += f[0];
-    s[1] += f[1];
-    s[2] += f[2];
-  }
+  const s = new Array(FEAT_DIM).fill(0);
+  for (const f of feats) for (let i = 0; i < FEAT_DIM; i++) s[i] += f[i];
   const n = feats.length || 1;
-  return [s[0] / n, s[1] / n, s[2] / n];
+  return s.map((v) => v / n);
 }
 
 function refreshDrumButton() {
@@ -689,6 +742,7 @@ async function runDrumCalibration() {
   }
 
   drumCentroids = {
+    v: FEAT_VERSION,
     kick: mean(kickF),
     snare: mean(snareF),
     hat: mean(hatF),

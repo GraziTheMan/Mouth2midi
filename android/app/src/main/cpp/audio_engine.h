@@ -105,6 +105,8 @@ private:
     std::unique_ptr<BeatDetector> beat_;
     std::vector<float> beatScratch_;
     std::atomic<bool> beatboxMode_{false};
+    // Onset floor for beatbox, taken from the Gate slider (see configure()).
+    float onsetFloor_ = 0.02f;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> lowLatency_{false};

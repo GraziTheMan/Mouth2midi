@@ -6,6 +6,10 @@
 #include <cstdio>
 #endif
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 namespace m2m {
 
 BeatDetector::BeatDetector(int sampleRate) : sampleRate_(sampleRate) {
@@ -30,6 +34,13 @@ void BeatDetector::setSensitivity(float s) {
     // More sensitive → lower floor + smaller required jump.
     floor_ = 0.12f - 0.10f * s;   // 0.12 .. 0.02
     ratio_ = 2.4f - 0.9f * s;     // 2.4 .. 1.5
+}
+
+void BeatDetector::setOnsetFloor(float floor) {
+    // Keep a small minimum so the detector never fires on pure numerical noise.
+    if (floor < 0.015f) floor = 0.015f;
+    if (floor > 1.0f) floor = 1.0f;
+    floor_ = floor;
 }
 
 int BeatDetector::process(const float* samples, int n, BeatHit* out, int maxHits) {
@@ -88,15 +99,20 @@ BeatHit BeatDetector::classify() const {
     double lowE = 0.0, highE = 0.0, totalE = 0.0;
     int crossings = 0;
     float peak = 0.0f;
+    // Split the window in half to measure how fast the transient dies (decay).
+    const size_t half = classWin_ / 2;
+    double e1 = 0.0, e2 = 0.0;
 
     const size_t start = writePos_ - classWin_;
     for (size_t k = 0; k < classWin_; ++k) {
         const float x = ring_[(start + k) % ringSize_];
         lp += lpAlpha * (x - lp);
         const float d = x - prev;  // first difference → emphasises high freqs
+        const double x2 = static_cast<double>(x) * x;
         lowE += static_cast<double>(lp) * lp;
         highE += static_cast<double>(d) * d;
-        totalE += static_cast<double>(x) * x;
+        totalE += x2;
+        if (k < half) e1 += x2; else e2 += x2;
         if ((x >= 0.0f) != (prev >= 0.0f)) ++crossings;
         prev = x;
         const float ax = std::fabs(x);
@@ -107,9 +123,19 @@ BeatHit BeatDetector::classify() const {
     const double lowRatio = lowE / (totalE + eps);
     const double highRatio = highE / (totalE + eps);  // first-diff emphasises highs
     const double zcr = static_cast<double>(crossings) / static_cast<double>(classWin_);
+    // Spectral centroid (Hz) from the derivative estimate:
+    //   f_c ≈ (fs / 2π) · sqrt(Σd² / Σx²).
+    // A cheap, FFT-free brightness measure — kicks land low, hats high.
+    const double centroid =
+        (static_cast<double>(sampleRate_) / (2.0 * M_PI)) * std::sqrt(highRatio);
+    // Decay: energy in the 2nd half vs the 1st. Short/snappy (hat) → ~0;
+    // ringing (kick) → toward 1. Independent of brightness, so it separates
+    // hat (dies instantly) from snare (lingers) where spectral features can't.
+    const double decay = std::sqrt(e2 / (e1 + eps));
 #ifdef BEAT_DEBUG
-    std::fprintf(stderr, "  [feat] lowRatio=%.3f highRatio=%.3f zcr=%.3f\n", lowRatio,
-                 highRatio, zcr);
+    std::fprintf(stderr,
+                 "  [feat] lowRatio=%.3f highRatio=%.3f zcr=%.3f centroid=%.0f decay=%.3f\n",
+                 lowRatio, highRatio, zcr, centroid, decay);
 #endif
 
     BeatHit hit;
@@ -124,6 +150,8 @@ BeatHit BeatDetector::classify() const {
     hit.lowRatio = static_cast<float>(lowRatio);
     hit.highRatio = static_cast<float>(highRatio);
     hit.zcr = static_cast<float>(zcr);
+    hit.centroid = static_cast<float>(centroid);
+    hit.decay = static_cast<float>(decay);
     return hit;
 }
 

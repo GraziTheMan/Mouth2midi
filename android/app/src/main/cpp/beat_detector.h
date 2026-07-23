@@ -7,10 +7,17 @@ namespace m2m {
 struct BeatHit {
     enum Kind { Kick, Snare, Hat } kind = Kick;
     int velocity = 0;  // 1..127
-    // Classification features, surfaced for on-device tuning.
+    // Classification features, surfaced for on-device tuning + the JS
+    // nearest-centroid classifier.
     float lowRatio = 0.0f;
     float highRatio = 0.0f;
     float zcr = 0.0f;
+    // Spectral centroid in Hz (brightness) via the time-derivative estimate.
+    float centroid = 0.0f;
+    // Temporal envelope: RMS(2nd half)/RMS(1st half) of the analysis window.
+    // Near 0 = snappy/short (hat); toward 1 = sustained/ringing (kick). This is
+    // the axis that separates hat from snare, which are otherwise both bright.
+    float decay = 0.0f;
 };
 
 /**
@@ -35,6 +42,12 @@ public:
     void reset();
     /** 0..1; higher = more sensitive (lower onset threshold). */
     void setSensitivity(float s);
+    /**
+     * Set the absolute onset floor directly (minimum fast-envelope level to
+     * fire). Driven by the UI "Gate" slider in beatbox mode so noisy rooms /
+     * cars can raise the bar until only intentional hits register.
+     */
+    void setOnsetFloor(float floor);
 
     /**
      * Label a hit from its features. Thresholds calibrated on real on-device

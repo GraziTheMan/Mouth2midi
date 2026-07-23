@@ -70,10 +70,14 @@ export interface PercussionEvent {
   kind: PercussionKind;
   velocity: number;
   timestampMs: number;
-  /** Classification features, surfaced for on-device tuning. */
+  /** Classification features, surfaced for on-device tuning + calibration. */
   lowRatio?: number;
   highRatio?: number;
   zcr?: number;
+  /** Spectral centroid in Hz (brightness). */
+  centroid?: number;
+  /** Envelope decay: RMS(2nd half)/RMS(1st half); ~0 snappy, →1 ringing. */
+  decay?: number;
 }
 
 export interface Mouth2MidiPlugin {
