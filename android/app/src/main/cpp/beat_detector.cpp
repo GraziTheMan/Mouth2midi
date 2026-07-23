@@ -113,6 +113,9 @@ BeatHit BeatDetector::classify() const {
     if (v < 1.0f) v = 1.0f;
     if (v > 127.0f) v = 127.0f;
     hit.velocity = static_cast<int>(v);
+    hit.lowRatio = static_cast<float>(lowRatio);
+    hit.highRatio = static_cast<float>(highRatio);
+    hit.zcr = static_cast<float>(zcr);
     return hit;
 }
 

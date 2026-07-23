@@ -144,7 +144,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* /*stream*/
             const int nh = beat_->process(beatScratch_.data(), chunk, hits, 8);
             const int64_t t = nowMs();
             for (int h = 0; h < nh && listener_; ++h) {
-                listener_->onPercussion(hits[h].kind, hits[h].velocity, t);
+                listener_->onPercussion(hits[h], t);
             }
             off += chunk;
         }

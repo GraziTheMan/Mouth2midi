@@ -70,6 +70,10 @@ export interface PercussionEvent {
   kind: PercussionKind;
   velocity: number;
   timestampMs: number;
+  /** Classification features, surfaced for on-device tuning. */
+  lowRatio?: number;
+  highRatio?: number;
+  zcr?: number;
 }
 
 export interface Mouth2MidiPlugin {

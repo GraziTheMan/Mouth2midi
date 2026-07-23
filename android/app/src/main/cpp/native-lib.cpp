@@ -38,10 +38,11 @@ struct EventQueue : EngineListener {
              std::to_string(ts));
     }
 
-    void onPercussion(int kind, int velocity, int64_t ts) override {
-        const char* k = kind == 0 ? "kick" : kind == 1 ? "snare" : "hat";
-        push("perc|" + std::string(k) + "|" + std::to_string(velocity) + "|" +
-             std::to_string(ts));
+    void onPercussion(const BeatHit& h, int64_t ts) override {
+        const char* k = h.kind == 0 ? "kick" : h.kind == 1 ? "snare" : "hat";
+        push("perc|" + std::string(k) + "|" + std::to_string(h.velocity) + "|" +
+             std::to_string(h.lowRatio) + "|" + std::to_string(h.highRatio) + "|" +
+             std::to_string(h.zcr) + "|" + std::to_string(ts));
     }
 
     void onPitch(const PitchResult& p, int64_t ts) override {

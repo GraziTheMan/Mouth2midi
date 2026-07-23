@@ -142,6 +142,8 @@ void Mouth2Midi.addListener('percussion', (p) => {
   const note = DRUM_NOTE[p.kind] ?? 38;
   el.noteName.textContent = DRUM_LABEL[p.kind] ?? p.kind;
   el.freq.textContent = `vel ${p.velocity}`;
+  // Surface the classification features so they can be screenshotted for tuning.
+  el.status.textContent = `${DRUM_LABEL[p.kind]}  low=${(p.lowRatio ?? 0).toFixed(2)}  high=${(p.highRatio ?? 0).toFixed(2)}  zcr=${(p.zcr ?? 0).toFixed(2)}`;
   if (!recording) return;
   const t = performance.now() - recordStart;
   // One-shot: a short note on GM drum channel 10 (index 9).
@@ -155,6 +157,13 @@ el.playBtn.addEventListener('click', async () => {
     pushConfig();
     await Mouth2Midi.start();
     running = true;
+    // Apply the selected engine now that the native engine exists — selecting
+    // it before Start would otherwise no-op (engine not created yet).
+    if (el.detector.value !== 'yin') {
+      await Mouth2Midi.setDetector({
+        detector: el.detector.value as 'yin' | 'spice' | 'beatbox',
+      });
+    }
     el.playBtn.textContent = 'Stop';
     el.playBtn.classList.add('active');
     el.recBtn.disabled = false;

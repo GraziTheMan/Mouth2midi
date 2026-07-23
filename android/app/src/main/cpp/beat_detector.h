@@ -7,6 +7,10 @@ namespace m2m {
 struct BeatHit {
     enum Kind { Kick, Snare, Hat } kind = Kick;
     int velocity = 0;  // 1..127
+    // Classification features, surfaced for on-device tuning.
+    float lowRatio = 0.0f;
+    float highRatio = 0.0f;
+    float zcr = 0.0f;
 };
 
 /**

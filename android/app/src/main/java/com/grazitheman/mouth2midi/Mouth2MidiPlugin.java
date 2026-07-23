@@ -248,11 +248,14 @@ public class Mouth2MidiPlugin extends Plugin {
     }
 
     private void emitPercussion(String[] p) {
-        // perc|<kick|snare|hat>|<vel>|<ts>
+        // perc|<kick|snare|hat>|<vel>|<lowRatio>|<highRatio>|<zcr>|<ts>
         JSObject e = new JSObject();
         e.put("kind", p[1]);
         e.put("velocity", Integer.parseInt(p[2]));
-        e.put("timestampMs", Long.parseLong(p[3]));
+        e.put("lowRatio", Float.parseFloat(p[3]));
+        e.put("highRatio", Float.parseFloat(p[4]));
+        e.put("zcr", Float.parseFloat(p[5]));
+        e.put("timestampMs", Long.parseLong(p[6]));
         notifyListeners("percussion", e);
     }
 }

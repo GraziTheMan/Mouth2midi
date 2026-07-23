@@ -23,8 +23,7 @@ public:
     virtual ~EngineListener() = default;
     virtual void onNote(const NoteAction& action, int64_t timestampMs) = 0;
     virtual void onPitch(const PitchResult& pitch, int64_t timestampMs) = 0;
-    // kind: 0=kick, 1=snare, 2=hat.
-    virtual void onPercussion(int kind, int velocity, int64_t timestampMs) = 0;
+    virtual void onPercussion(const BeatHit& hit, int64_t timestampMs) = 0;
 };
 
 /**
