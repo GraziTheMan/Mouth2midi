@@ -92,7 +92,7 @@ export interface Mouth2MidiPlugin {
    * assets/spice.tflite; if absent it stays on "yin" and returns
    * available:false so the UI can explain it.
    */
-  setDetector(options: { detector: 'yin' | 'spice' }): Promise<{
+  setDetector(options: { detector: 'yin' | 'spice' | 'beatbox' }): Promise<{
     detector: string;
     available: boolean;
     error?: string;

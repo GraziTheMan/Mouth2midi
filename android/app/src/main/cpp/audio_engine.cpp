@@ -2,6 +2,7 @@
 
 #include <android/log.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -56,6 +57,8 @@ bool AudioEngine::start() {
     // Default to YIN. To A/B a learned detector, construct a SpiceDetector and
     // use it when isAvailable(); it falls back here otherwise.
     detector_ = std::make_unique<Yin>(sampleRate_, kWindow);
+    beat_ = std::make_unique<BeatDetector>(sampleRate_);
+    beatScratch_.resize(8192);
     filled_ = 0;
     spiceWritePos_ = 0;
     spiceDecimCount_ = 0;
@@ -126,6 +129,27 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* /*stream*/
                                                    void* audioData,
                                                    int32_t numFrames) {
     const float* in = static_cast<const float*>(audioData);
+
+    // Beatbox mode: onset detection + kick/snare/hat classification on the
+    // gained signal; emit percussion hits. No pitch tracking.
+    if (beatboxMode_.load(std::memory_order_relaxed) && beat_) {
+        BeatHit hits[8];
+        int off = 0;
+        while (off < numFrames) {
+            const int chunk =
+                std::min(static_cast<int>(beatScratch_.size()), numFrames - off);
+            for (int i = 0; i < chunk; ++i) {
+                beatScratch_[i] = std::tanh(in[off + i] * kInputGain);
+            }
+            const int nh = beat_->process(beatScratch_.data(), chunk, hits, 8);
+            const int64_t t = nowMs();
+            for (int h = 0; h < nh && listener_; ++h) {
+                listener_->onPercussion(hits[h].kind, hits[h].velocity, t);
+            }
+            off += chunk;
+        }
+        return oboe::DataCallbackResult::Continue;
+    }
 
     // SPICE mode: skip YIN entirely; just downsample 48k → 16k into the ring for
     // the Java worker to read. YIN mode: run the sliding-window analysis.

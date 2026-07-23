@@ -33,7 +33,7 @@ export class Mouth2MidiWeb extends WebPlugin implements Mouth2MidiPlugin {
     };
   }
 
-  async setDetector(_options: { detector: 'yin' | 'spice' }) {
+  async setDetector(_options: { detector: 'yin' | 'spice' | 'beatbox' }) {
     return { detector: 'yin', available: false };
   }
 }

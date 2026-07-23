@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "beat_detector.h"
 #include "note_tracker.h"
 #include "pitch_detector.h"
 #include "yin.h"
@@ -22,6 +23,8 @@ public:
     virtual ~EngineListener() = default;
     virtual void onNote(const NoteAction& action, int64_t timestampMs) = 0;
     virtual void onPitch(const PitchResult& pitch, int64_t timestampMs) = 0;
+    // kind: 0=kick, 1=snare, 2=hat.
+    virtual void onPercussion(int kind, int velocity, int64_t timestampMs) = 0;
 };
 
 /**
@@ -50,6 +53,9 @@ public:
     // pitch back via pushExternalPitch (which then drives the NoteTracker).
     void setSpiceMode(bool on) { spiceMode_.store(on); }
     bool spiceMode() const { return spiceMode_.load(); }
+    // Beatbox mode: run onset detection + kick/snare/hat classification instead
+    // of pitch tracking, emitting onPercussion.
+    void setBeatboxMode(bool on) { beatboxMode_.store(on); }
     // Copy the most recent n samples of 16 kHz audio into out. Returns false if
     // fewer than n samples have been captured yet.
     bool pullSpiceWindow(float* out, size_t n);
@@ -95,6 +101,11 @@ private:
     std::atomic<size_t> spicePublished_{0};      // visible to readers
     int spiceDecimCount_ = 0;
     std::atomic<bool> spiceMode_{false};
+
+    // Beatbox detection (Tier 1, native).
+    std::unique_ptr<BeatDetector> beat_;
+    std::vector<float> beatScratch_;
+    std::atomic<bool> beatboxMode_{false};
 
     std::atomic<bool> running_{false};
     std::atomic<bool> lowLatency_{false};

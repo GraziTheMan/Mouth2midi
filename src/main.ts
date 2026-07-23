@@ -135,6 +135,20 @@ void Mouth2Midi.addListener('note', (n) => {
   });
 });
 
+// --- Percussion (beatbox) events → GM drum notes on channel 10 ---------------
+const DRUM_NOTE: Record<string, number> = { kick: 36, snare: 38, hat: 42 };
+const DRUM_LABEL: Record<string, string> = { kick: 'KICK', snare: 'SNARE', hat: 'HAT' };
+void Mouth2Midi.addListener('percussion', (p) => {
+  const note = DRUM_NOTE[p.kind] ?? 38;
+  el.noteName.textContent = DRUM_LABEL[p.kind] ?? p.kind;
+  el.freq.textContent = `vel ${p.velocity}`;
+  if (!recording) return;
+  const t = performance.now() - recordStart;
+  // One-shot: a short note on GM drum channel 10 (index 9).
+  recorded.push({ timeMs: t, note, velocity: p.velocity, on: true, channel: 9 });
+  recorded.push({ timeMs: t + 40, note, velocity: 0, on: false, channel: 9 });
+});
+
 // --- Transport ---------------------------------------------------------------
 el.playBtn.addEventListener('click', async () => {
   if (!running) {
@@ -366,17 +380,22 @@ updateCaptureBand();
 
 // --- Pitch engine (YIN / SPICE) toggle --------------------------------------
 el.detector.addEventListener('change', async () => {
-  const want = el.detector.value as 'yin' | 'spice';
+  const want = el.detector.value as 'yin' | 'spice' | 'beatbox';
   const res = await Mouth2Midi.setDetector({ detector: want });
   if (want === 'spice' && !res.available) {
     // Model not bundled (or failed to load) — revert the UI to YIN.
     el.detector.value = 'yin';
     el.status.textContent =
       'SPICE model not found (add assets/spice.tflite). Staying on YIN.';
-  } else {
-    el.status.textContent =
-      res.detector === 'spice' ? 'Pitch engine: SPICE (AI).' : 'Pitch engine: YIN.';
+    return;
   }
+  const label =
+    res.detector === 'spice'
+      ? 'SPICE pitch (AI)'
+      : res.detector === 'beatbox'
+        ? '🥁 Beatbox (drums) — kick/snare/hat → GM drums'
+        : 'YIN pitch';
+  el.status.textContent = `Engine: ${label}`;
 });
 
 // --- Help modal --------------------------------------------------------------

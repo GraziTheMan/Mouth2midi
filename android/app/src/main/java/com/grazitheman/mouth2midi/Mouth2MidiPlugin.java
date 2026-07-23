@@ -124,6 +124,11 @@ public class Mouth2MidiPlugin extends Plugin {
             engine.nativeSetDetector("spice");
             ret.put("detector", "spice");
             ret.put("available", true);
+        } else if ("beatbox".equals(which)) {
+            stopSpice();
+            engine.nativeSetDetector("beatbox");
+            ret.put("detector", "beatbox");
+            ret.put("available", true);
         } else {
             stopSpice();
             engine.nativeSetDetector("yin");
@@ -195,6 +200,9 @@ public class Mouth2MidiPlugin extends Plugin {
                 case "pitch":
                     emitPitch(p);
                     break;
+                case "perc":
+                    emitPercussion(p);
+                    break;
                 default:
                     break;
             }
@@ -237,5 +245,14 @@ public class Mouth2MidiPlugin extends Plugin {
         e.put("confidence", Float.parseFloat(p[3]));
         e.put("rms", Float.parseFloat(p[4]));
         notifyListeners("pitch", e);
+    }
+
+    private void emitPercussion(String[] p) {
+        // perc|<kick|snare|hat>|<vel>|<ts>
+        JSObject e = new JSObject();
+        e.put("kind", p[1]);
+        e.put("velocity", Integer.parseInt(p[2]));
+        e.put("timestampMs", Long.parseLong(p[3]));
+        notifyListeners("percussion", e);
     }
 }

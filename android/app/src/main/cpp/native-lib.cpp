@@ -38,6 +38,12 @@ struct EventQueue : EngineListener {
              std::to_string(ts));
     }
 
+    void onPercussion(int kind, int velocity, int64_t ts) override {
+        const char* k = kind == 0 ? "kick" : kind == 1 ? "snare" : "hat";
+        push("perc|" + std::string(k) + "|" + std::to_string(velocity) + "|" +
+             std::to_string(ts));
+    }
+
     void onPitch(const PitchResult& p, int64_t ts) override {
         // midiFloat: only meaningful when voiced.
         float midiFloat = 0.0f;
@@ -135,9 +141,10 @@ Java_com_grazitheman_mouth2midi_AudioEngineNative_nativeSetDetector(
     JNIEnv* env, jobject, jstring which) {
     if (!g_engine) return;
     const char* s = env->GetStringUTFChars(which, nullptr);
-    const bool spice = s && std::string(s) == "spice";
+    const std::string which_s = s ? s : "yin";
     env->ReleaseStringUTFChars(which, s);
-    g_engine->setSpiceMode(spice);
+    g_engine->setSpiceMode(which_s == "spice");
+    g_engine->setBeatboxMode(which_s == "beatbox");
 }
 
 // Copy the latest 16 kHz window into `out`; returns false if not enough audio.

@@ -25,6 +25,7 @@ add_library(mouth2midi SHARED
     yin.cpp
     spice_detector.cpp
     note_tracker.cpp
+    beat_detector.cpp
 )
 
 find_library(log-lib log)
