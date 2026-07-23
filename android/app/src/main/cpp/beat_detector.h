@@ -37,6 +37,12 @@ public:
     void setSensitivity(float s);
 
     /**
+     * Label a hit from its features. Thresholds calibrated on real on-device
+     * beatbox captures (see beat_detector.cpp). Exposed for unit testing.
+     */
+    static BeatHit::Kind labelFrom(float lowRatio, float highRatio, float zcr);
+
+    /**
      * Feed a block of gained mono samples. Writes up to maxHits detected hits to
      * out and returns how many. Realtime-safe.
      */

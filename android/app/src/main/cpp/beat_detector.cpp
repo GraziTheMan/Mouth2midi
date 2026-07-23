@@ -65,6 +65,19 @@ int BeatDetector::process(const float* samples, int n, BeatHit* out, int maxHits
     return count;
 }
 
+// Thresholds calibrated on real on-device captures. From the sample set:
+//   kicks : low 0.53-0.74, high 0.00-0.36, zcr 0.01-0.08
+//   snares: low 0.20-0.33, high 0.11-0.59, zcr 0.03-0.11
+//   hats  : low 0.00-0.07, high 1.14-2.67, zcr 0.36-0.56
+// Kick is low-dominated; hat vs snare separates cleanly on ZCR (big gap
+// 0.11 -> 0.36), with a high-frequency-ratio backup. Earlier the hat cutoff
+// (high > 2.2) was far too strict, so hats fell through to snare.
+BeatHit::Kind BeatDetector::labelFrom(float lowRatio, float highRatio, float zcr) {
+    if (lowRatio > 0.42f && zcr < 0.15f) return BeatHit::Kick;
+    if (zcr > 0.20f || highRatio > 0.90f) return BeatHit::Hat;
+    return BeatHit::Snare;
+}
+
 BeatHit BeatDetector::classify() const {
     // Analyze the most recent classWin_ samples (the transient just captured).
     // One-pole low-pass (~250 Hz) for low-band energy; first difference
@@ -100,13 +113,8 @@ BeatHit BeatDetector::classify() const {
 #endif
 
     BeatHit hit;
-    if (lowRatio > 0.5 && zcr < 0.10) {
-        hit.kind = BeatHit::Kick;      // low-dominated, few crossings
-    } else if (highRatio > 2.2) {
-        hit.kind = BeatHit::Hat;       // energy concentrated at the very top
-    } else {
-        hit.kind = BeatHit::Snare;     // broadband middle ground
-    }
+    hit.kind = labelFrom(static_cast<float>(lowRatio), static_cast<float>(highRatio),
+                         static_cast<float>(zcr));
 
     // Velocity from the onset level (perceptual-ish curve).
     float v = std::sqrt(onsetLevel_) * 180.0f + 20.0f;
