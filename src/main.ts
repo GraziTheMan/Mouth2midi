@@ -65,6 +65,15 @@ const el = {
   drumReset: $<HTMLButtonElement>('drumReset'),
   drumClose: $<HTMLButtonElement>('drumClose'),
   drumCloseX: $<HTMLButtonElement>('drumCloseX'),
+  rej: $<HTMLInputElement>('rej'),
+  rejVal: $('rejVal'),
+  wBass: $<HTMLInputElement>('wBass'),
+  wBassVal: $('wBassVal'),
+  wBright: $<HTMLInputElement>('wBright'),
+  wBrightVal: $('wBrightVal'),
+  wDecay: $<HTMLInputElement>('wDecay'),
+  wDecayVal: $('wDecayVal'),
+  advReset: $<HTMLButtonElement>('advReset'),
 };
 
 let running = false;
@@ -681,20 +690,46 @@ let drumCapture: DrumKind | null = null;
 const drumSamples: Record<DrumKind, DrumFeat[]> = { kick: [], snare: [], hat: [] };
 const DRUM_MIN_SAMPLES = 3;
 
-function dist2(a: DrumFeat, b: DrumFeat): number {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
-  return s;
+// User-adjustable beatbox tuning (Advanced panel). Defaults reproduce the
+// plain equal-weight nearest-centroid behaviour exactly, so nothing changes
+// until a slider moves. All on-device; persisted in localStorage.
+interface BeatTuning {
+  reject: number; // 0 (accept everything) .. 1 (strict) → outlier radius
+  wBass: number; // weight on the low-band (kick) axis
+  wBright: number; // weight on the zcr + centroid (brightness) axes
+  wDecay: number; // weight on the decay (envelope) axis
+}
+const BEAT_TUNING_DEFAULT: BeatTuning = { reject: 0.5, wBass: 1, wBright: 1, wDecay: 1 };
+const BEAT_TUNING_KEY = 'm2m.beatTuning';
+
+function loadBeatTuning(): BeatTuning {
+  try {
+    const raw = localStorage.getItem(BEAT_TUNING_KEY);
+    if (raw) {
+      const t = JSON.parse(raw) as Partial<BeatTuning>;
+      return { ...BEAT_TUNING_DEFAULT, ...t };
+    }
+  } catch {
+    /* fall through to defaults */
+  }
+  return { ...BEAT_TUNING_DEFAULT };
+}
+const beatTuning: BeatTuning = loadBeatTuning();
+
+// Weighted squared distance: bass axis, the two brightness axes, decay axis,
+// each scaled by its influence. With all weights 1 this is plain Euclidean².
+function weightedDist2(f: DrumFeat, c: DrumFeat): number {
+  return (
+    beatTuning.wBass * (f[0] - c[0]) ** 2 +
+    beatTuning.wBright * ((f[1] - c[1]) ** 2 + (f[2] - c[2]) ** 2) +
+    beatTuning.wDecay * (f[3] - c[3]) ** 2
+  );
 }
 
-// Outlier-reject radius from the (otherwise-unused-in-beatbox) Confidence slider:
-// higher confidence = stricter = a hit must sit closer to one of your learned
-// sounds or it's dropped as noise. This is what stops random car/room sounds
-// from being forced into a kick/snare/hat.
+// Reject radius from the tuning's strictness: 0 → loose (0.9), 1 → strict (0.18).
 function rejectRadius(): number {
-  const conf = Number(el.conf.value); // 0.5..0.99
-  const t = Math.min(1, Math.max(0, (conf - 0.5) / (0.99 - 0.5)));
-  return 0.85 - t * (0.85 - 0.18); // loose 0.85 → strict 0.18 (Euclidean dist)
+  const t = Math.min(1, Math.max(0, beatTuning.reject));
+  return 0.9 - t * (0.9 - 0.18);
 }
 
 // Nearest calibrated centroid, or null if the hit is too far from all of them
@@ -705,7 +740,7 @@ function classifyDrum(p: PercFeatures): DrumKind | null {
   let best: DrumKind = 'snare';
   let bestD = Infinity;
   (['kick', 'snare', 'hat'] as DrumKind[]).forEach((k) => {
-    const d = dist2(f, drumCentroids![k]);
+    const d = weightedDist2(f, drumCentroids![k]);
     if (d < bestD) {
       bestD = d;
       best = k;
@@ -843,4 +878,51 @@ el.drumSave.addEventListener('click', () => {
   }
   refreshDrumButton();
   el.drumText.innerHTML = `Saved! Learned kick (${drumSamples.kick.length}), snare (${drumSamples.snare.length}), hat (${drumSamples.hat.length}). Every hit now snaps to your closest sound.`;
+});
+
+// --- Advanced beatbox tuning panel -------------------------------------------
+function saveBeatTuning() {
+  try {
+    localStorage.setItem(BEAT_TUNING_KEY, JSON.stringify(beatTuning));
+  } catch {
+    /* storage unavailable — stays in memory */
+  }
+}
+function syncBeatTuningUI() {
+  el.rej.value = String(beatTuning.reject);
+  el.wBass.value = String(beatTuning.wBass);
+  el.wBright.value = String(beatTuning.wBright);
+  el.wDecay.value = String(beatTuning.wDecay);
+  el.rejVal.textContent = beatTuning.reject.toFixed(2);
+  el.wBassVal.textContent = beatTuning.wBass.toFixed(1);
+  el.wBrightVal.textContent = beatTuning.wBright.toFixed(1);
+  el.wDecayVal.textContent = beatTuning.wDecay.toFixed(1);
+}
+syncBeatTuningUI();
+
+el.rej.addEventListener('input', () => {
+  beatTuning.reject = Number(el.rej.value);
+  el.rejVal.textContent = beatTuning.reject.toFixed(2);
+  saveBeatTuning();
+});
+el.wBass.addEventListener('input', () => {
+  beatTuning.wBass = Number(el.wBass.value);
+  el.wBassVal.textContent = beatTuning.wBass.toFixed(1);
+  saveBeatTuning();
+});
+el.wBright.addEventListener('input', () => {
+  beatTuning.wBright = Number(el.wBright.value);
+  el.wBrightVal.textContent = beatTuning.wBright.toFixed(1);
+  saveBeatTuning();
+});
+el.wDecay.addEventListener('input', () => {
+  beatTuning.wDecay = Number(el.wDecay.value);
+  el.wDecayVal.textContent = beatTuning.wDecay.toFixed(1);
+  saveBeatTuning();
+});
+el.advReset.addEventListener('click', () => {
+  Object.assign(beatTuning, BEAT_TUNING_DEFAULT);
+  syncBeatTuningUI();
+  saveBeatTuning();
+  el.status.textContent = 'Beatbox tuning reset to defaults.';
 });

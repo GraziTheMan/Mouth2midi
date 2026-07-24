@@ -403,6 +403,47 @@ select {
   margin-top: 8px;
 }
 
+/* Collapsible advanced-tuning drawer. */
+.advanced {
+  margin: 0 0 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.advanced > summary {
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+.advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.advanced > summary::after {
+  content: '▾';
+  float: right;
+  opacity: 0.6;
+  transition: transform 0.2s;
+}
+.advanced[open] > summary::after {
+  transform: rotate(180deg);
+}
+.advanced-body {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.advanced-note {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin: 0;
+}
+
 /* Per-sample capture buttons (one per instrument / voice target). */
 .calib-grid {
   display: flex;

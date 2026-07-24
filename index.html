@@ -138,6 +138,33 @@
         <button id="calibBtn" class="calib-btn">🎤 Calibrate to my voice</button>
         <button id="drumCalibBtn" class="calib-btn">🥁 Calibrate my drums</button>
 
+        <details id="advPanel" class="advanced">
+          <summary>🎛 Advanced beatbox tuning</summary>
+          <div class="advanced-body">
+            <p class="advanced-note">
+              Fine-tune how your hits are told apart, live. Defaults match normal
+              behaviour — nothing changes until you move a slider. On-device only.
+            </p>
+            <label class="field">
+              <span>Reject noise <em id="rejVal">0.50</em></span>
+              <input id="rej" type="range" min="0" max="1" step="0.05" value="0.5" />
+            </label>
+            <label class="field">
+              <span>Bass influence <em id="wBassVal">1.0</em></span>
+              <input id="wBass" type="range" min="0" max="2" step="0.1" value="1" />
+            </label>
+            <label class="field">
+              <span>Brightness influence <em id="wBrightVal">1.0</em></span>
+              <input id="wBright" type="range" min="0" max="2" step="0.1" value="1" />
+            </label>
+            <label class="field">
+              <span>Decay influence <em id="wDecayVal">1.0</em></span>
+              <input id="wDecay" type="range" min="0" max="2" step="0.1" value="1" />
+            </label>
+            <button id="advReset" class="btn">Reset tuning</button>
+          </div>
+        </details>
+
         <p id="status" class="status"></p>
 
         <button id="helpBtn" class="help-btn">? What do these controls do</button>
@@ -172,7 +199,7 @@
 
           <h3>Beatbox &amp; Calibrate my drums</h3>
           <p>Set <b>Engine → Beatbox</b> to turn kicks/snares/hi-hats into GM drum notes (channel 10). Because everyone's mouth sounds sit differently, <b>Calibrate my drums</b> learns <i>your</i> three sounds: tap a drum's button and make that sound once (one tap = one sample), do 3+ each, then <b>Save</b>. Every later hit snaps to whichever of your sounds it's closest to. Runs entirely on-device; <b>Reset</b> returns to the built-in detector.</p>
-          <p>In beatbox mode two sliders change job: <b>Gate</b> becomes the loudness floor — raise it in a noisy room/car so only intentional hits register — and <b>Confidence</b> becomes strictness: higher means a hit must sit closer to one of your calibrated sounds or it's ignored as noise (needs calibration). The sheet switches to three drum lanes so you can watch hits land.</p>
+          <p>In beatbox mode <b>Gate</b> becomes the loudness floor — raise it in a noisy room/car so only intentional hits register. The sheet switches to three drum lanes so you can watch hits land. For finer control, open <b>🎛 Advanced beatbox tuning</b>: <b>Reject noise</b> sets how close a hit must be to one of your calibrated sounds before it's ignored; <b>Bass / Brightness / Decay influence</b> set how much each feature counts when telling your drums apart. If ringing hi-hats read as kicks, lower <b>Decay influence</b> or raise <b>Bass influence</b>. <b>Reset tuning</b> restores defaults.</p>
         </div>
       </div>
     </div>
