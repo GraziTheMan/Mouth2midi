@@ -43,13 +43,25 @@ const el = {
   calibBtn: $<HTMLButtonElement>('calibBtn'),
   calibModal: $('calibModal'),
   calibText: $('calibText'),
-  calibRun: $<HTMLButtonElement>('calibRun'),
+  capLow: $<HTMLButtonElement>('capLow'),
+  capHigh: $<HTMLButtonElement>('capHigh'),
+  capSilence: $<HTMLButtonElement>('capSilence'),
+  cntLow: $('cntLow'),
+  cntHigh: $('cntHigh'),
+  cntSil: $('cntSil'),
+  calibApply: $<HTMLButtonElement>('calibApply'),
   calibClose: $<HTMLButtonElement>('calibClose'),
   calibCloseX: $<HTMLButtonElement>('calibCloseX'),
   drumCalibBtn: $<HTMLButtonElement>('drumCalibBtn'),
   drumModal: $('drumModal'),
   drumText: $('drumText'),
-  drumRun: $<HTMLButtonElement>('drumRun'),
+  capKick: $<HTMLButtonElement>('capKick'),
+  capSnare: $<HTMLButtonElement>('capSnare'),
+  capHat: $<HTMLButtonElement>('capHat'),
+  cntKick: $('cntKick'),
+  cntSnare: $('cntSnare'),
+  cntHat: $('cntHat'),
+  drumSave: $<HTMLButtonElement>('drumSave'),
   drumReset: $<HTMLButtonElement>('drumReset'),
   drumClose: $<HTMLButtonElement>('drumClose'),
   drumCloseX: $<HTMLButtonElement>('drumCloseX'),
@@ -147,8 +159,17 @@ void Mouth2Midi.addListener('note', (n) => {
 const DRUM_NOTE: Record<DrumKind, number> = { kick: 36, snare: 38, hat: 42 };
 const DRUM_LABEL: Record<DrumKind, string> = { kick: 'KICK', snare: 'SNARE', hat: 'HAT' };
 void Mouth2Midi.addListener('percussion', (p) => {
-  // Calibration (when active) taps the raw hit stream before anything else.
-  drumCollector?.(p);
+  // Calibration capture: if a per-instrument button is armed, this hit becomes
+  // one labelled sample and is NOT played/recorded (so calibrating never dumps
+  // notes into a take). One tap = one sample.
+  if (drumCapture) {
+    const k = drumCapture;
+    drumCapture = null;
+    drumSamples[k].push(normFeat(p));
+    roll.addDrum(k, p.velocity); // still show it landed
+    onDrumSampleCaptured(k);
+    return;
+  }
 
   // If the user has calibrated their own drums, classify by nearest centroid
   // (which may reject the hit as noise); otherwise use the native heuristic.
@@ -465,73 +486,116 @@ el.rangeHi.addEventListener('input', () => {
 syncRangeLabels();
 
 // --- Voice calibration -------------------------------------------------------
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 function percentile(arr: number[], p: number): number {
   const s = [...arr].sort((a, b) => a - b);
   const i = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
   return s[i];
 }
 
+// Voice-calibration samples captured this session, one bucket per target.
+let calLow: number[] = [];
+let calHigh: number[] = [];
+let calSilence: number[] = [];
+
+function updateVoiceApply() {
+  el.calibApply.disabled = calLow.length < 5 || calHigh.length < 5;
+}
+
 function openCalib() {
+  calLow = [];
+  calHigh = [];
+  calSilence = [];
+  calibCollector = null;
+  el.cntLow.textContent = 'not set';
+  el.cntHigh.textContent = 'not set';
+  el.cntSil.textContent = 'not set';
+  el.calibApply.disabled = true;
   el.calibText.innerHTML =
-    'This sets your range band and gate to your voice.<br />Make sure the mic is running (Start), then press Begin.';
-  el.calibRun.disabled = false;
+    'Tap a button, then hold that note for a second. One at a time, so a low note can\'t bleed into the high.';
   el.calibModal.removeAttribute('hidden');
 }
 function closeCalib() {
   calibCollector = null;
+  [el.capLow, el.capHigh, el.capSilence].forEach((b) => b.classList.remove('listening'));
   el.calibModal.setAttribute('hidden', '');
 }
 el.calibBtn.addEventListener('click', openCalib);
 el.calibClose.addEventListener('click', closeCalib);
 el.calibCloseX.addEventListener('click', closeCalib);
 
-el.calibRun.addEventListener('click', runCalibration);
-
-async function runCalibration() {
+// Record one on-demand window (~1.4s) into a bucket, with the button pulsing.
+function captureVoice(
+  btn: HTMLButtonElement,
+  label: string,
+  onSample: (p: PitchSample) => void,
+  onDone: () => void,
+) {
   if (!running) {
-    el.calibText.textContent = 'Press Start first so the mic is live, then Begin.';
+    el.calibText.textContent = 'Press Start first so the mic is live.';
     return;
   }
-  el.calibRun.disabled = true;
-  const low: number[] = [];
-  const high: number[] = [];
-  const silence: number[] = [];
-
-  const phase = async (label: string, ms: number, cb: (p: PitchSample) => void) => {
-    calibCollector = cb;
-    for (let s = Math.ceil(ms / 1000); s > 0; s--) {
-      el.calibText.innerHTML = `${label}<br /><span style="font-size:44px">${s}</span>`;
-      await delay(1000);
-    }
+  [el.capLow, el.capHigh, el.capSilence].forEach((b) => b.classList.remove('listening'));
+  btn.classList.add('listening');
+  el.calibText.innerHTML = `Listening… <b>${label}</b>`;
+  calibCollector = onSample;
+  setTimeout(() => {
     calibCollector = null;
-  };
+    btn.classList.remove('listening');
+    onDone();
+    updateVoiceApply();
+  }, 1400);
+}
 
-  await phase('Hum your LOWEST comfortable note', 3000, (p) => {
-    if (p.frequency > 0 && p.confidence > 0.6) low.push(p.midiFloat);
-  });
-  await phase('Now your HIGHEST comfortable note', 3000, (p) => {
-    if (p.frequency > 0 && p.confidence > 0.6) high.push(p.midiFloat);
-  });
-  await phase('Stay silent…', 2000, (p) => {
-    silence.push(p.rms);
-  });
+el.capLow.addEventListener('click', () => {
+  calLow = [];
+  captureVoice(
+    el.capLow,
+    'hold your LOWEST note',
+    (p) => {
+      if (p.frequency > 0 && p.confidence > 0.6) calLow.push(p.midiFloat);
+    },
+    () => {
+      el.cntLow.textContent = calLow.length >= 5 ? `${midiToName(percentile(calLow, 50))} ✓` : 'too quiet — retry';
+      el.calibText.innerHTML = calLow.length >= 5 ? 'Low note captured.' : "Didn't catch it — hold a steady note and retry.";
+    },
+  );
+});
+el.capHigh.addEventListener('click', () => {
+  calHigh = [];
+  captureVoice(
+    el.capHigh,
+    'hold your HIGHEST note',
+    (p) => {
+      if (p.frequency > 0 && p.confidence > 0.6) calHigh.push(p.midiFloat);
+    },
+    () => {
+      el.cntHigh.textContent = calHigh.length >= 5 ? `${midiToName(percentile(calHigh, 50))} ✓` : 'too quiet — retry';
+      el.calibText.innerHTML = calHigh.length >= 5 ? 'High note captured.' : "Didn't catch it — hold a steady note and retry.";
+    },
+  );
+});
+el.capSilence.addEventListener('click', () => {
+  calSilence = [];
+  captureVoice(
+    el.capSilence,
+    'stay silent',
+    (p) => calSilence.push(p.rms),
+    () => {
+      el.cntSil.textContent = 'captured ✓';
+      el.calibText.innerHTML = 'Silence captured (sets the noise gate).';
+    },
+  );
+});
 
-  el.calibRun.disabled = false;
-
-  if (low.length < 5 || high.length < 5) {
-    el.calibText.textContent = "Didn't catch enough — hum steadily and try Begin again.";
-    return;
-  }
-
+el.calibApply.addEventListener('click', () => {
+  if (calLow.length < 5 || calHigh.length < 5) return;
   // Robust low/high from percentiles, padded a semitone, kept ordered.
-  let loNote = Math.max(24, Math.floor(percentile(low, 20)) - 1);
-  let hiNote = Math.min(96, Math.ceil(percentile(high, 80)) + 1);
+  let loNote = Math.max(24, Math.floor(percentile(calLow, 20)) - 1);
+  let hiNote = Math.min(96, Math.ceil(percentile(calHigh, 80)) + 1);
   if (hiNote <= loNote) hiNote = loNote + 1;
 
-  // Gate a touch above the measured noise floor.
-  const noise = silence.length ? percentile(silence, 90) : 0.01;
+  // Gate a touch above the measured noise floor (default if silence skipped).
+  const noise = calSilence.length ? percentile(calSilence, 90) : 0.01;
   const gate = Math.min(0.15, Math.max(0.008, Math.round((noise * 1.7) / 0.005) * 0.005));
 
   el.rangeLo.value = String(loNote);
@@ -544,7 +608,7 @@ async function runCalibration() {
   el.calibText.innerHTML = `Done! Range <b>${midiToName(loNote)}–${midiToName(
     hiNote,
   )}</b>, gate <b>${gate.toFixed(3)}</b>.<br />Adjust the sliders any time.`;
-}
+});
 
 // --- Drum calibration (per-user, nearest-centroid) ---------------------------
 // The global heuristic thresholds are whack-a-mole: every voice's kick/snare/hat
@@ -610,8 +674,12 @@ function loadDrumCentroids(): DrumCentroids | null {
 }
 
 let drumCentroids: DrumCentroids | null = loadDrumCentroids();
-// Set while a calibration phase is collecting hits (see runDrumCalibration).
-let drumCollector: ((p: PercFeatures) => void) | null = null;
+// The instrument whose next hit should be captured as a calibration sample,
+// or null when not calibrating. Armed by the per-instrument capture buttons.
+let drumCapture: DrumKind | null = null;
+// Samples collected in the open calibration session, before Save.
+const drumSamples: Record<DrumKind, DrumFeat[]> = { kick: [], snare: [], hat: [] };
+const DRUM_MIN_SAMPLES = 3;
 
 function dist2(a: DrumFeat, b: DrumFeat): number {
   let s = 0;
@@ -662,15 +730,78 @@ function refreshDrumButton() {
 }
 refreshDrumButton();
 
+const DRUM_CAP_BTN: Record<DrumKind, HTMLButtonElement> = {
+  kick: el.capKick,
+  snare: el.capSnare,
+  hat: el.capHat,
+};
+const DRUM_CNT_EL: Record<DrumKind, HTMLElement> = {
+  kick: el.cntKick,
+  snare: el.cntSnare,
+  hat: el.cntHat,
+};
+
+function updateDrumCounts() {
+  (['kick', 'snare', 'hat'] as DrumKind[]).forEach((k) => {
+    DRUM_CNT_EL[k].textContent = `${drumSamples[k].length} sample${drumSamples[k].length === 1 ? '' : 's'}`;
+  });
+  const ready = (['kick', 'snare', 'hat'] as DrumKind[]).every(
+    (k) => drumSamples[k].length >= DRUM_MIN_SAMPLES,
+  );
+  el.drumSave.disabled = !ready;
+}
+
+// A capture button was armed and its hit arrived (from the percussion listener).
+function onDrumSampleCaptured(k: DrumKind) {
+  DRUM_CAP_BTN[k].classList.remove('listening');
+  updateDrumCounts();
+  const n = drumSamples[k].length;
+  const need = Math.max(0, DRUM_MIN_SAMPLES - n);
+  el.drumText.innerHTML = need
+    ? `Got a ${k.toUpperCase()} (${n}). ${need} more each to enable Save.`
+    : `Got a ${k.toUpperCase()} (${n}). Add more or press Save.`;
+}
+
+async function armDrumCapture(k: DrumKind) {
+  if (!running) {
+    el.drumText.textContent = 'Press Start first so the mic is live.';
+    return;
+  }
+  // Capturing needs the beatbox engine feeding hits.
+  if (el.detector.value !== 'beatbox') {
+    el.detector.value = 'beatbox';
+    await Mouth2Midi.setDetector({ detector: 'beatbox' });
+  }
+  // Re-arming a different button cancels the previous arm.
+  (['kick', 'snare', 'hat'] as DrumKind[]).forEach((other) =>
+    DRUM_CAP_BTN[other].classList.remove('listening'),
+  );
+  drumCapture = k;
+  DRUM_CAP_BTN[k].classList.add('listening');
+  el.drumText.innerHTML = `Listening… make your <b>${k.toUpperCase()}</b> now.`;
+}
+
+(['kick', 'snare', 'hat'] as DrumKind[]).forEach((k) => {
+  DRUM_CAP_BTN[k].addEventListener('click', () => void armDrumCapture(k));
+});
+
 function openDrum() {
+  // Fresh session of samples each time the modal opens.
+  drumSamples.kick = [];
+  drumSamples.snare = [];
+  drumSamples.hat = [];
+  drumCapture = null;
+  updateDrumCounts();
   el.drumText.innerHTML = drumCentroids
-    ? "You've already calibrated. Press Begin to redo, or Reset to go back to the built-in detector."
-    : "Teach the app <b>your</b> kick, snare and hi-hat.<br />Make sure the mic is running (Start), then press Begin.";
-  el.drumRun.disabled = false;
+    ? "Already calibrated. Recapture your sounds to redo, or Reset to go back to the built-in detector."
+    : "Tap a button, then make that one sound. 3+ each. One tap = one sample.";
   el.drumModal.removeAttribute('hidden');
 }
 function closeDrum() {
-  drumCollector = null;
+  drumCapture = null;
+  (['kick', 'snare', 'hat'] as DrumKind[]).forEach((k) =>
+    DRUM_CAP_BTN[k].classList.remove('listening'),
+  );
   el.drumModal.setAttribute('hidden', '');
 }
 el.drumCalibBtn.addEventListener('click', openDrum);
@@ -681,71 +812,29 @@ el.drumModal.addEventListener('click', (e) => {
 });
 el.drumReset.addEventListener('click', () => {
   drumCentroids = null;
+  drumSamples.kick = [];
+  drumSamples.snare = [];
+  drumSamples.hat = [];
+  drumCapture = null;
   try {
     localStorage.removeItem(DRUM_KEY);
   } catch {
     /* ignore */
   }
   refreshDrumButton();
+  updateDrumCounts();
   el.drumText.innerHTML = 'Reset — back to the built-in drum detector.';
 });
-el.drumRun.addEventListener('click', runDrumCalibration);
-
-async function runDrumCalibration() {
-  if (!running) {
-    el.drumText.textContent = 'Press Start first so the mic is live, then Begin.';
-    return;
-  }
-  // Calibration only makes sense with the beatbox engine feeding hits; switch to
-  // it (and the UI selector) if we're not already there.
-  if (el.detector.value !== 'beatbox') {
-    el.detector.value = 'beatbox';
-    await Mouth2Midi.setDetector({ detector: 'beatbox' });
-  }
-  el.drumRun.disabled = true;
-
-  // Collect every hit that arrives during a labelled window.
-  const collect = (label: string, ms: number): Promise<DrumFeat[]> =>
-    new Promise((resolve) => {
-      const feats: DrumFeat[] = [];
-      drumCollector = (p) => feats.push(normFeat(p));
-      let remaining = Math.ceil(ms / 1000);
-      const tick = () => {
-        el.drumText.innerHTML = `${label}<br /><span style="font-size:40px">${remaining}</span><br /><span style="opacity:.7">${feats.length} caught</span>`;
-        if (remaining <= 0) {
-          drumCollector = null;
-          resolve(feats);
-          return;
-        }
-        remaining--;
-        setTimeout(tick, 1000);
-      };
-      tick();
-    });
-
-  const kickF = await collect('Tap your KICK ~5 times (e.g. a "b" / "puh")', 5000);
-  const snareF = await collect('Now your SNARE ~5 times (e.g. "psh" / "kah")', 5000);
-  const hatF = await collect('Now your HI-HAT ~5 times (e.g. "ts" / "tss")', 5000);
-
-  el.drumRun.disabled = false;
-
-  if (kickF.length < 2 || snareF.length < 2 || hatF.length < 2) {
-    const short = [
-      kickF.length < 2 ? 'kick' : null,
-      snareF.length < 2 ? 'snare' : null,
-      hatF.length < 2 ? 'hat' : null,
-    ]
-      .filter(Boolean)
-      .join(', ');
-    el.drumText.innerHTML = `Didn't catch enough ${short}. Tap a bit louder/steadier and press Begin again.`;
-    return;
-  }
-
+el.drumSave.addEventListener('click', () => {
+  const ready = (['kick', 'snare', 'hat'] as DrumKind[]).every(
+    (k) => drumSamples[k].length >= DRUM_MIN_SAMPLES,
+  );
+  if (!ready) return;
   drumCentroids = {
     v: FEAT_VERSION,
-    kick: mean(kickF),
-    snare: mean(snareF),
-    hat: mean(hatF),
+    kick: mean(drumSamples.kick),
+    snare: mean(drumSamples.snare),
+    hat: mean(drumSamples.hat),
   };
   try {
     localStorage.setItem(DRUM_KEY, JSON.stringify(drumCentroids));
@@ -753,6 +842,5 @@ async function runDrumCalibration() {
     /* storage full/unavailable — stays in memory for this session */
   }
   refreshDrumButton();
-
-  el.drumText.innerHTML = `Done! Learned your kick (${kickF.length}), snare (${snareF.length}) and hat (${hatF.length}).<br />Every hit now snaps to your closest sound. Reset any time.`;
-}
+  el.drumText.innerHTML = `Saved! Learned kick (${drumSamples.kick.length}), snare (${drumSamples.snare.length}), hat (${drumSamples.hat.length}). Every hit now snaps to your closest sound.`;
+});

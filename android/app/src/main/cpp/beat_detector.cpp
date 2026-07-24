@@ -25,6 +25,7 @@ void BeatDetector::reset() {
     onsetLevel_ = 0.0f;
     pending_ = false;
     pendingCount_ = 0;
+    armed_ = true;
     std::fill(ring_.begin(), ring_.end(), 0.0f);
 }
 
@@ -64,11 +65,22 @@ int BeatDetector::process(const float* samples, int n, BeatHit* out, int maxHits
             }
         }
 
-        // New onset: fast env jumps above the baseline and a floor.
-        if (refractory_ == 0 && !pending_ &&
+        // Re-arm (hysteresis): after a hit we won't fire again until the fast
+        // envelope actually falls back down — below a fraction of the level that
+        // triggered it, or near the floor. This is what stops a single vocal
+        // sound (a plosive's vowel tail, a snare's "shhh") from re-triggering as
+        // its envelope wobbles. One attack → one hit.
+        if (!armed_ && fastEnv_ < std::max(floor_ * 0.6f, onsetLevel_ * kRearmFrac)) {
+            armed_ = true;
+        }
+
+        // New onset: armed, past the minimum gap, and the fast env jumps above
+        // both the adaptive baseline and the floor.
+        if (armed_ && refractory_ == 0 && !pending_ &&
             fastEnv_ > slowEnv_ * ratio_ && fastEnv_ > floor_) {
             onsetLevel_ = fastEnv_;
-            refractory_ = static_cast<int>(sampleRate_ * 0.07);  // 70 ms gap
+            armed_ = false;
+            refractory_ = static_cast<int>(sampleRate_ * 0.045);  // 45 ms min gap
             pending_ = true;
             pendingCount_ = static_cast<int>(classWin_);
         }

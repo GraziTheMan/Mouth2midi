@@ -77,6 +77,11 @@ private:
 
     bool pending_ = false;
     int pendingCount_ = 0;
+    // Hysteresis: false after a hit until the envelope decays enough to re-arm,
+    // so one sound can't fire twice. See process().
+    bool armed_ = true;
+    // Re-arm once fastEnv falls below this fraction of the triggering level.
+    static constexpr float kRearmFrac = 0.35f;
 
     float floor_ = 0.05f;   // minimum fast-env level to fire
     float ratio_ = 1.9f;    // fast/slow jump factor to fire

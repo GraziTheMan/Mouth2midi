@@ -402,3 +402,36 @@ select {
   gap: 10px;
   margin-top: 8px;
 }
+
+/* Per-sample capture buttons (one per instrument / voice target). */
+.calib-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 14px;
+}
+.calib-cap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.calib-cap em {
+  font-style: normal;
+  font-weight: 600;
+  opacity: 0.7;
+  font-size: 14px;
+}
+/* Armed: waiting for the next sound. */
+.calib-cap.listening {
+  border-color: var(--accent);
+  background: var(--panel-2);
+  animation: capPulse 1s ease-in-out infinite;
+}
+@keyframes capPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 92, 255, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(124, 92, 255, 0); }
+}
